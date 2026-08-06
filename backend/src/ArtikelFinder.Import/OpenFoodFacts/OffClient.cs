@@ -75,22 +75,11 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
         int seitengroesse,
         CancellationToken ct)
     {
-        // Absolute Adresse statt BaseAddress: die Schwesterdatenbanken liegen unter eigenen
-        // Hostnamen, sprechen aber dieselbe API.
-        var pfad = $"{abfrage.Datenbank.BasisAdresse}api/v2/search"
-            + $"?{abfrage.Feld}={Uri.EscapeDataString(abfrage.Wert)}"
-            + $"&fields={Felder}"
-            + $"&page={seite}"
-            + $"&page_size={seitengroesse}";
-
-        if (!string.IsNullOrWhiteSpace(abfrage.Land))
-        {
-            pfad += $"&countries_tags={Uri.EscapeDataString(abfrage.Land)}";
-        }
+        var pfad = Adresse(abfrage, seite, seitengroesse);
 
         for (var versuch = 0; ; versuch++)
         {
-            var (antwort, wiederholbar) = await VersuchenAsync(pfad, seite, ct);
+            var (antwort, wiederholbar) = await VersuchenAsync(abfrage, pfad, seite, ct);
 
             if (antwort is not null)
             {
@@ -121,9 +110,50 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
         }
     }
 
+    /// <summary>
+    /// Baut die Adresse fuer eine Seite. Absolute Adresse statt BaseAddress: die Quellen
+    /// liegen unter eigenen Hostnamen.
+    /// </summary>
+    public static string Adresse(OffAbfrage abfrage, int seite, int seitengroesse)
+    {
+        if (abfrage.Datenbank.Api == OffApi.Suche)
+        {
+            // Der Suchdienst kennt keine Feldparameter, sondern eine Abfragesprache. Laender
+            // stehen dort mit Sprachpraefix im Index ("en:germany"), die Produkt-API nimmt
+            // sie ohne.
+            var frage = $"{abfrage.Feld}:\"{abfrage.Wert}\"";
+
+            if (!string.IsNullOrWhiteSpace(abfrage.Land))
+            {
+                var land = abfrage.Land.Contains(':') ? abfrage.Land : $"en:{abfrage.Land}";
+                frage += $" AND countries_tags:\"{land}\"";
+            }
+
+            return $"{abfrage.Datenbank.BasisAdresse}search"
+                + $"?q={Uri.EscapeDataString(frage)}"
+                + $"&fields={Felder}"
+                + $"&page={seite}"
+                + $"&page_size={seitengroesse}";
+        }
+
+        var pfad = $"{abfrage.Datenbank.BasisAdresse}api/v2/search"
+            + $"?{abfrage.Feld}={Uri.EscapeDataString(abfrage.Wert)}"
+            + $"&fields={Felder}"
+            + $"&page={seite}"
+            + $"&page_size={seitengroesse}";
+
+        if (!string.IsNullOrWhiteSpace(abfrage.Land))
+        {
+            pfad += $"&countries_tags={Uri.EscapeDataString(abfrage.Land)}";
+        }
+
+        return pfad;
+    }
+
     /// <summary>Ein einzelner Versuch. <c>Wiederholbar</c> unterscheidet "gerade überlastet"
     /// von "gibt es nicht".</summary>
     private async Task<(OffSuchantwort? Antwort, bool Wiederholbar)> VersuchenAsync(
+        OffAbfrage abfrage,
         string pfad,
         int seite,
         CancellationToken ct)
@@ -134,7 +164,11 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
 
             if (antwort.IsSuccessStatusCode)
             {
-                return (await antwort.Content.ReadFromJsonAsync<OffSuchantwort>(JsonOptionen, ct), false);
+                var gelesen = abfrage.Datenbank.Api == OffApi.Suche
+                    ? (await antwort.Content.ReadFromJsonAsync<OffSucheAntwort>(JsonOptionen, ct))?.AlsSuchantwort()
+                    : await antwort.Content.ReadFromJsonAsync<OffSuchantwort>(JsonOptionen, ct);
+
+                return (gelesen, false);
             }
 
             var status = (int)antwort.StatusCode;
@@ -142,7 +176,8 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
 
             if (!wiederholbar)
             {
-                log.LogWarning("Open Food Facts antwortete mit {Status} auf Seite {Seite}.", status, seite);
+                log.LogWarning(
+                    "{Abfrage} antwortete mit {Status} auf Seite {Seite}.", abfrage, status, seite);
             }
 
             return (null, wiederholbar);

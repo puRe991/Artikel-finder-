@@ -26,7 +26,7 @@ backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
   src/ArtikelFinder.Api/              Datenmodell und Web-API für Phase 3 (Mehrbenutzer)
   daten/katalog-seed.tsv.gz           Quelle des Katalogs in der App
-  tests/                              73 Tests
+  tests/                              79 Tests
 ```
 
 Das Backend wird für den Betrieb der App **nicht** gebraucht. Es bleibt im Projekt, weil es
@@ -100,6 +100,14 @@ nicht in Open Food Facts, sondern in Open Beauty Facts, Open Products Facts und 
 Food Facts; sie sprechen dieselbe API unter anderer Adresse. Ohne sie fehlte der halbe
 Drogerie- und Tierbedarfsteil der Marke.
 
+**Open Food Facts wird über zwei Endpunkte gefragt, nicht über einen mit Ausweichadresse.**
+`api/v2/search` ist regelmäßig tagelang am Stück auf 503, während der eigenständige
+Suchdienst `search.openfoodfacts.org` antwortet — und die beiden Indizes decken sich nicht
+vollständig. Deshalb ist der Suchdienst eine gleichwertige fünfte Quelle mit eigenem
+Abfragedialekt (`brands_tags:"k-classic" AND countries_tags:"en:germany"` statt
+Feldparametern), keine Notfalladresse. Doppelte Treffer kostet der Abgleich über die EAN
+nichts, und fällt eine Quelle aus, liefert die andere trotzdem.
+
 **Bei Markenabfragen kommt die Kategorie aus dem einzelnen Artikel.** Eine Warengruppe
 liefert ihre Zielkategorie mit, eine Marke nicht — unter K-Classic stehen Milch,
 Toilettenpapier und Katzenfutter nebeneinander. `Kategoriezuordnung` liest deshalb die
@@ -140,7 +148,7 @@ vollständig auf dem Gerät.
 
 ```bash
 cd android && ./gradlew test       # 31 Tests
-cd backend && dotnet test          # 73 Tests
+cd backend && dotnet test          # 79 Tests
 ```
 
 Die App-Tests laufen unter Robolectric gegen echtes SQLite und lesen die tatsächlich

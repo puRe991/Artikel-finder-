@@ -1,5 +1,16 @@
 namespace ArtikelFinder.Import.OpenFoodFacts;
 
+/// <summary>Welche API eine Quelle spricht — die beiden Dialekte unterscheiden sich in
+/// Abfrageform und Antwortformat.</summary>
+public enum OffApi
+{
+    /// <summary>Die klassische Produkt-API (<c>api/v2/search</c>) mit Feldfiltern.</summary>
+    V2,
+
+    /// <summary>Der Suchdienst <c>search.openfoodfacts.org</c> mit Abfragesprache.</summary>
+    Suche,
+}
+
 /// <summary>
 /// Eine Datenbank der Open-Food-Facts-Familie.
 ///
@@ -16,10 +27,24 @@ namespace ArtikelFinder.Import.OpenFoodFacts;
 /// noch richtig. Für Lebensmittel gibt es keinen sinnvollen Sammelbegriff — dort bleibt die
 /// Kategorie lieber leer als falsch.
 /// </param>
-public sealed record OffDatenbank(string Name, string BasisAdresse, string? StandardKategorie)
+/// <param name="Api">Welchen Dialekt diese Quelle spricht.</param>
+public sealed record OffDatenbank(
+    string Name,
+    string BasisAdresse,
+    string? StandardKategorie,
+    OffApi Api = OffApi.V2)
 {
     public static readonly OffDatenbank Lebensmittel =
         new("Open Food Facts", "https://world.openfoodfacts.org/", null);
+
+    /// <summary>
+    /// Derselbe Datenbestand über den eigenständigen Suchdienst. Er ist eine zweite Quelle,
+    /// keine Ausweichadresse: <c>api/v2/search</c> ist tagelang am Stück nicht erreichbar,
+    /// und die beiden Indizes decken sich nicht vollständig — was der eine nicht findet,
+    /// liefert oft der andere. Doppelte Treffer kostet der Abgleich über die EAN nichts.
+    /// </summary>
+    public static readonly OffDatenbank LebensmittelSuche =
+        new("Open Food Facts (Suchdienst)", "https://search.openfoodfacts.org/", null, OffApi.Suche);
 
     public static readonly OffDatenbank Drogerie =
         new("Open Beauty Facts", "https://world.openbeautyfacts.org/", "Drogerie");
@@ -31,7 +56,7 @@ public sealed record OffDatenbank(string Name, string BasisAdresse, string? Stan
         new("Open Pet Food Facts", "https://world.openpetfoodfacts.org/", "Tierbedarf");
 
     public static readonly IReadOnlyList<OffDatenbank> Alle =
-        [Lebensmittel, Drogerie, Haushalt, Tierbedarf];
+        [Lebensmittel, LebensmittelSuche, Drogerie, Haushalt, Tierbedarf];
 
     public override string ToString() => Name;
 }
