@@ -26,7 +26,7 @@ backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
   src/ArtikelFinder.Api/              Datenmodell und Web-API für Phase 3 (Mehrbenutzer)
   daten/katalog-seed.tsv.gz           Quelle des Katalogs in der App
-  tests/                              55 Tests
+  tests/                              73 Tests
 ```
 
 Das Backend wird für den Betrieb der App **nicht** gebraucht. Es bleibt im Projekt, weil es
@@ -60,9 +60,17 @@ cd backend/src/ArtikelFinder.Import
 # Artikel holen (dauert je nach Umfang bis zu einer Stunde):
 dotnet run -- api --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
 
+# Kaufland-Eigenmarken holen (K-Classic, K-Bio, Purland, Bevola …):
+dotnet run -- marken --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
+
 # Katalogdatei neu schreiben:
 dotnet run -- export
 ```
+
+`marken` fragt jede Marke in allen vier Datenbanken der Open-Food-Facts-Familie ab. Einzelne
+Marken gehen mit `--marke k-classic --marke k-bio`, ein anderes Land mit `--land ""` (alle).
+Beide Importwege schreiben in denselben Katalog und gleichen über die EAN ab — die
+Reihenfolge ist egal, doppelte Läufe schaden nicht.
 
 Anschließend `backend/daten/katalog-seed.tsv.gz` entpackt nach
 `android/app/src/main/assets/katalog-seed.tsv` kopieren und die App neu bauen.
@@ -81,6 +89,25 @@ Normalisierung neu aufgebaut. Der Aufbau kostet einmalig wenige Sekunden.
 **Der Build-Prozess entpackt `.gz`-Assets selbsttätig und schneidet die Endung ab.** Die
 Datei heißt in der App deshalb `katalog-seed.tsv`. Der Katalogaufbau erkennt am Dateikopf,
 ob gepackte oder ungepackte Daten vorliegen, statt sich auf eine Variante zu verlassen.
+
+**Die Eigenmarken kommen über die Marke herein, nicht über die Warengruppe.** Der
+Warengruppen-Import holt „Milch aus Deutschland" und trifft K-Classic nur zufällig mit. Für
+ein Sortiment, das zu großen Teilen aus Eigenmarken besteht, ist das die falsche Achse:
+gefragt wird deshalb nach `brands_tags` — K-Classic, K-Bio, K-take it veggie, K-Free,
+K-Favourites, K-to go, K-Purland, Purland, Bevola, exquisit — und zwar in allen vier
+Datenbanken der Open-Food-Facts-Familie. Toilettenpapier, Duschgel und Katzenfutter stehen
+nicht in Open Food Facts, sondern in Open Beauty Facts, Open Products Facts und Open Pet
+Food Facts; sie sprechen dieselbe API unter anderer Adresse. Ohne sie fehlte der halbe
+Drogerie- und Tierbedarfsteil der Marke.
+
+**Bei Markenabfragen kommt die Kategorie aus dem einzelnen Artikel.** Eine Warengruppe
+liefert ihre Zielkategorie mit, eine Marke nicht — unter K-Classic stehen Milch,
+Toilettenpapier und Katzenfutter nebeneinander. `Kategoriezuordnung` liest deshalb die
+Open-Food-Facts-Tags des Artikels und löst vom speziellsten zum allgemeinsten auf
+(`en:uht-milks` → Milch, sonst `en:dairies` → Molkereiprodukte, sonst die Standardkategorie
+der Datenbank). Was sich nicht eindeutig zuordnen lässt, bleibt ohne Kategorie: über die
+Suche ist der Artikel weiter zu finden, ein falsch einsortierter schickt dich in den
+falschen Gang.
 
 **Preise und Standorte hängen am Markt, nicht am Artikel allein.** `marktId` steckt von
 Anfang an in beiden Tabellen. Der Ausbau auf weitere Filialen kostet damit keine
@@ -113,7 +140,7 @@ vollständig auf dem Gerät.
 
 ```bash
 cd android && ./gradlew test       # 31 Tests
-cd backend && dotnet test          # 55 Tests
+cd backend && dotnet test          # 73 Tests
 ```
 
 Die App-Tests laufen unter Robolectric gegen echtes SQLite und lesen die tatsächlich
@@ -141,11 +168,16 @@ dieser Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
 
 ## Rechtliches
 
-Der Katalog stammt aus [Open Food Facts](https://world.openfoodfacts.org) und steht unter
+Der Katalog stammt aus [Open Food Facts](https://world.openfoodfacts.org) und seinen
+Schwesterdatenbanken [Open Beauty Facts](https://world.openbeautyfacts.org),
+[Open Products Facts](https://world.openproductsfacts.org) und
+[Open Pet Food Facts](https://world.openpetfoodfacts.org). Alle vier stehen unter
 der [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/). Weil die Daten
 mit der App ausgeliefert werden, ist das eine Weitergabe: Namensnennung ist Pflicht, eine
 veränderte Fassung der Datenbank muss unter derselben Lizenz stehen. Für den privaten
 Gebrauch folgenlos, vor einer Veröffentlichung aber zu beachten.
 
-Kaufland.de wird **nicht** gescrapt — das verstößt gegen deren AGB. Preise und Standorte
+Kaufland.de wird **nicht** gescrapt — das verstößt gegen deren AGB. Auch die Eigenmarken
+kommen deshalb nicht von dort, sondern aus den offenen Datenbanken: dort sind es
+Community-Daten unter freier Lizenz, keine fremden Sortimentsdaten. Preise und Standorte
 werden ausschließlich selbst im Markt erfasst.

@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace ArtikelFinder.Import.OpenFoodFacts;
 
 /// <summary>
-/// Zugriff auf die Open-Food-Facts-Suche (API v2).
+/// Zugriff auf die Suche der Open-Food-Facts-Familie (API v2). Welche Datenbank gefragt wird
+/// und wonach gefiltert wird, steht in der <see cref="OffAbfrage"/>.
 ///
 /// Zwei Regeln aus deren Nutzungsbedingungen sind hier fest verdrahtet:
 /// ein aussagekraeftiger User-Agent mit Kontaktmoeglichkeit und eine Wartezeit zwischen
@@ -39,8 +40,7 @@ public readonly record struct OffSeitenergebnis
 public interface IOffClient
 {
     Task<OffSeitenergebnis> SuchenAsync(
-        string kategorieTag,
-        string land,
+        OffAbfrage abfrage,
         int seite,
         int seitengroesse,
         CancellationToken ct);
@@ -70,18 +70,23 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
     };
 
     public async Task<OffSeitenergebnis> SuchenAsync(
-        string kategorieTag,
-        string land,
+        OffAbfrage abfrage,
         int seite,
         int seitengroesse,
         CancellationToken ct)
     {
-        var pfad = "api/v2/search"
-            + $"?categories_tags={Uri.EscapeDataString(kategorieTag)}"
-            + $"&countries_tags={Uri.EscapeDataString(land)}"
+        // Absolute Adresse statt BaseAddress: die Schwesterdatenbanken liegen unter eigenen
+        // Hostnamen, sprechen aber dieselbe API.
+        var pfad = $"{abfrage.Datenbank.BasisAdresse}api/v2/search"
+            + $"?{abfrage.Feld}={Uri.EscapeDataString(abfrage.Wert)}"
             + $"&fields={Felder}"
             + $"&page={seite}"
             + $"&page_size={seitengroesse}";
+
+        if (!string.IsNullOrWhiteSpace(abfrage.Land))
+        {
+            pfad += $"&countries_tags={Uri.EscapeDataString(abfrage.Land)}";
+        }
 
         for (var versuch = 0; ; versuch++)
         {
@@ -101,16 +106,16 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
             if (versuch >= Wartezeiten.Length)
             {
                 log.LogWarning(
-                    "Seite {Seite} von {Tag} auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
-                    seite, kategorieTag, Wartezeiten.Length + 1);
+                    "Seite {Seite} von {Abfrage} auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
+                    seite, abfrage, Wartezeiten.Length + 1);
 
                 return OffSeitenergebnis.Fehlgeschlagen;
             }
 
             var warten = Wartezeiten[versuch];
             log.LogInformation(
-                "Seite {Seite} von {Tag} nicht verfügbar, neuer Versuch in {Sekunden}s.",
-                seite, kategorieTag, warten.TotalSeconds);
+                "Seite {Seite} von {Abfrage} nicht verfügbar, neuer Versuch in {Sekunden}s.",
+                seite, abfrage, warten.TotalSeconds);
 
             await Task.Delay(warten, ct);
         }

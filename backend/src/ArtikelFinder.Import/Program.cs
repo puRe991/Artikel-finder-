@@ -42,6 +42,26 @@ var apiBefehl = new Command("api", "Importiert über die Open-Food-Facts-Such-AP
     landOption, maxProZielOption, seitengroesseOption, pauseOption, kategorieOption,
 };
 
+// --- Befehl: marken ---
+var markenLandOption = new Option<string>("--land", () => "germany", "Ländertag. Leer = alle Länder.");
+var markenMaxOption = new Option<int>("--max", () => 0, "Maximale Artikel je Marke und Datenbank. 0 = kein Limit.");
+var markenSeitengroesseOption = new Option<int>("--seitengroesse", () => 100, "Produkte pro Anfrage (max. 100).");
+var markenPauseOption = new Option<int>("--pause", () => 6000, "Pause zwischen Anfragen in Millisekunden.");
+var markeOption = new Option<string[]>(
+    "--marke",
+    "Marken-Tag, z.B. k-classic. Mehrfach angebbar. Ohne Angabe werden alle Kaufland-Marken geholt.")
+{
+    AllowMultipleArgumentsPerToken = true,
+};
+
+var markenBefehl = new Command(
+    "marken",
+    "Importiert die Kaufland-Eigenmarken (K-Classic, K-Bio, Purland, Bevola …) aus allen "
+    + "vier Datenbanken der Open-Food-Facts-Familie.")
+{
+    markeOption, markenLandOption, markenMaxOption, markenSeitengroesseOption, markenPauseOption,
+};
+
 // --- Befehl: csv ---
 var dateiOption = new Option<string>("--datei", "Pfad zum TSV-Export (auch .gz).") { IsRequired = true };
 var csvLandOption = new Option<string>("--land", () => "germany", "Nur Produkte mit diesem Land. Leer = alle.");
@@ -72,9 +92,9 @@ var seedBefehl = new Command("seed", "Liest eine mit 'export' erzeugte Katalogda
     katalogDateiOption, seedStapelOption,
 };
 
-var wurzel = new RootCommand("Befüllt den Artikel-Finder-Katalog mit Artikeln aus Open Food Facts.")
+var wurzel = new RootCommand("Befüllt den Artikel-Finder-Katalog aus der Open-Food-Facts-Familie.")
 {
-    apiBefehl, csvBefehl, exportBefehl, seedBefehl,
+    apiBefehl, markenBefehl, csvBefehl, exportBefehl, seedBefehl,
 };
 
 wurzel.AddGlobalOption(datenbankOption);
@@ -111,6 +131,42 @@ apiBefehl.SetHandler(async kontext =>
 
     protokoll.LogInformation("Starte API-Import für {Anzahl} Warengruppen.", ziele.Count);
     var statistik = await importer.AusfuehrenAsync(einstellungen, ct);
+    protokoll.LogInformation("Fertig. {Statistik}", statistik);
+});
+
+markenBefehl.SetHandler(async kontext =>
+{
+    var dienste = DiensteBauen(
+        kontext.ParseResult.GetValueForOption(datenbankOption)!,
+        kontext.ParseResult.GetValueForOption(userAgentOption)!,
+        kontext.ParseResult.GetValueForOption(ausfuehrlichOption));
+
+    await using var _ = dienste;
+    var ct = kontext.GetCancellationToken();
+    await DatenbankVorbereitenAsync(dienste, ct);
+
+    var tags = kontext.ParseResult.GetValueForOption(markeOption) ?? [];
+    var marken = tags.Length > 0
+        ? tags.Select(MarkeFinden).ToList()
+        : Eigenmarke.Standard.ToList();
+
+    var einstellungen = new MarkenImportEinstellungen
+    {
+        Marken = marken,
+        Land = kontext.ParseResult.GetValueForOption(markenLandOption)!,
+        MaxProMarke = Math.Max(0, kontext.ParseResult.GetValueForOption(markenMaxOption)),
+        Seitengroesse = Math.Clamp(kontext.ParseResult.GetValueForOption(markenSeitengroesseOption), 1, 100),
+        Pause = TimeSpan.FromMilliseconds(Math.Max(0, kontext.ParseResult.GetValueForOption(markenPauseOption))),
+    };
+
+    var importer = dienste.GetRequiredService<ApiImporter>();
+    var protokoll = dienste.GetRequiredService<ILoggerFactory>().CreateLogger("Import");
+
+    protokoll.LogInformation(
+        "Starte Markenimport: {Marken} Marken × {Datenbanken} Datenbanken.",
+        marken.Count, einstellungen.Datenbanken.Count);
+
+    var statistik = await importer.MarkenImportierenAsync(einstellungen, ct);
     protokoll.LogInformation("Fertig. {Statistik}", statistik);
 });
 
@@ -202,9 +258,10 @@ static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool au
 
     dienste.AddDbContext<ArtikelFinderDbContext>(o => o.UseSqlite(verbindung));
 
+    // Keine BaseAddress: die Adresse steht je Abfrage fest, weil die Schwesterdatenbanken
+    // unter eigenen Hostnamen liegen.
     dienste.AddHttpClient<IOffClient, OffClient>(http =>
     {
-        http.BaseAddress = new Uri("https://world.openfoodfacts.org/");
         http.Timeout = TimeSpan.FromSeconds(60);
         http.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -235,3 +292,12 @@ static string ZielkategorieRaten(string offTag) =>
     Importziel.Standard.FirstOrDefault(z =>
         z.OffTag.Equals(offTag, StringComparison.OrdinalIgnoreCase))?.ZielKategorie
     ?? string.Empty;
+
+/// <summary>
+/// Sucht zu einem angegebenen Tag die bekannte Eigenmarke. Ein unbekannter Tag ist erlaubt —
+/// er wird einfach so abgefragt, dann heisst die Marke im Protokoll eben wie ihr Tag.
+/// </summary>
+static Eigenmarke MarkeFinden(string markenTag) =>
+    Eigenmarke.Standard.FirstOrDefault(m =>
+        m.MarkenTag.Equals(markenTag, StringComparison.OrdinalIgnoreCase))
+    ?? new Eigenmarke(markenTag, markenTag);
