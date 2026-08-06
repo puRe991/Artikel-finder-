@@ -11,7 +11,42 @@ namespace ArtikelFinder.Import.OpenFoodFacts;
 /// ein aussagekraeftiger User-Agent mit Kontaktmoeglichkeit und eine Wartezeit zwischen
 /// den Requests. Die Such-API ist auf 10 Anfragen pro Minute gedeckelt.
 /// </summary>
-public sealed class OffClient(HttpClient http, ILogger<OffClient> log)
+/// <summary>
+/// Ergebnis einer Seitenabfrage. Der Unterschied zwischen "vorübergehend nicht erreichbar"
+/// und "es gibt nichts mehr" ist entscheidend: beim ersten Fall darf der Importer die Seite
+/// überspringen und weitermachen, beim zweiten muss er die Warengruppe beenden.
+/// </summary>
+public readonly record struct OffSeitenergebnis
+{
+    private OffSeitenergebnis(OffSuchantwort? antwort, bool istFehlgeschlagen)
+    {
+        Antwort = antwort;
+        IstFehlgeschlagen = istFehlgeschlagen;
+    }
+
+    public OffSuchantwort? Antwort { get; }
+
+    /// <summary>Vorübergehender Ausfall — die Seite fehlt, die Warengruppe ist nicht zu Ende.</summary>
+    public bool IstFehlgeschlagen { get; }
+
+    public static OffSeitenergebnis Geladen(OffSuchantwort antwort) => new(antwort, false);
+    public static OffSeitenergebnis Fehlgeschlagen => new(null, true);
+
+    /// <summary>Die Anfrage war nicht wiederholbar falsch — die Warengruppe endet hier.</summary>
+    public static OffSeitenergebnis Abgelehnt => new(null, false);
+}
+
+public interface IOffClient
+{
+    Task<OffSeitenergebnis> SuchenAsync(
+        string kategorieTag,
+        string land,
+        int seite,
+        int seitengroesse,
+        CancellationToken ct);
+}
+
+public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffClient
 {
     /// <summary>Nur diese Felder anfordern — spart bei 100 Produkten pro Seite viel Traffic.</summary>
     private const string Felder =
@@ -34,7 +69,7 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log)
         PropertyNameCaseInsensitive = true,
     };
 
-    public async Task<OffSuchantwort?> SuchenAsync(
+    public async Task<OffSeitenergebnis> SuchenAsync(
         string kategorieTag,
         string land,
         int seite,
@@ -51,16 +86,25 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log)
         for (var versuch = 0; ; versuch++)
         {
             var (antwort, wiederholbar) = await VersuchenAsync(pfad, seite, ct);
-            if (antwort is not null || !wiederholbar || versuch >= Wartezeiten.Length)
-            {
-                if (antwort is null && wiederholbar)
-                {
-                    log.LogWarning(
-                        "Seite {Seite} von {Tag} auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
-                        seite, kategorieTag, Wartezeiten.Length + 1);
-                }
 
-                return antwort;
+            if (antwort is not null)
+            {
+                return OffSeitenergebnis.Geladen(antwort);
+            }
+
+            if (!wiederholbar)
+            {
+                // Die Anfrage selbst ist falsch (unbekannter Tag o.ae.) — Wiederholen hilft nicht.
+                return OffSeitenergebnis.Abgelehnt;
+            }
+
+            if (versuch >= Wartezeiten.Length)
+            {
+                log.LogWarning(
+                    "Seite {Seite} von {Tag} auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
+                    seite, kategorieTag, Wartezeiten.Length + 1);
+
+                return OffSeitenergebnis.Fehlgeschlagen;
             }
 
             var warten = Wartezeiten[versuch];

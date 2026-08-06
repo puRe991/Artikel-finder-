@@ -19,8 +19,11 @@ public sealed record ApiImportEinstellungen
 }
 
 /// <summary>Holt Artikel ueber die Open-Food-Facts-Suche und schreibt sie in den Katalog.</summary>
-public sealed class ApiImporter(OffClient client, Katalogschreiber schreiber, ILogger<ApiImporter> log)
+public sealed class ApiImporter(IOffClient client, Katalogschreiber schreiber, ILogger<ApiImporter> log)
 {
+    /// <summary>Ab so vielen Ausfaellen hintereinander ist der Dienst als Ganzes weg.</summary>
+    private const int MaxAusfaelleInFolge = 3;
+
     public async Task<Importstatistik> AusfuehrenAsync(ApiImportEinstellungen einstellungen, CancellationToken ct)
     {
         var gesamt = new Importstatistik();
@@ -46,13 +49,39 @@ public sealed class ApiImporter(OffClient client, Katalogschreiber schreiber, IL
         var statistik = new Importstatistik();
         var seite = 1;
         var uebernommen = 0;
+        var ausfaelleInFolge = 0;
 
         while (uebernommen < einstellungen.MaxProZiel)
         {
             ct.ThrowIfCancellationRequested();
 
-            var antwort = await client.SuchenAsync(
+            var ergebnis = await client.SuchenAsync(
                 ziel.OffTag, einstellungen.Land, seite, einstellungen.Seitengroesse, ct);
+
+            if (ergebnis.IstFehlgeschlagen)
+            {
+                // Eine vorübergehend nicht erreichbare Seite beendet die Warengruppe nicht —
+                // sonst kostet ein einzelner 503 auf Seite 1 den kompletten Rest. Erst wenn
+                // mehrere Seiten hintereinander ausfallen, ist Open Food Facts offenbar
+                // insgesamt nicht erreichbar und Weitermachen sinnlos.
+                statistik.SeitenFehlgeschlagen++;
+                ausfaelleInFolge++;
+
+                if (ausfaelleInFolge >= MaxAusfaelleInFolge)
+                {
+                    log.LogWarning(
+                        "{Tag}: {Anzahl} Seiten in Folge ausgefallen — Warengruppe abgebrochen.",
+                        ziel.OffTag, ausfaelleInFolge);
+                    break;
+                }
+
+                seite++;
+                await PausierenAsync(einstellungen, ct);
+                continue;
+            }
+
+            ausfaelleInFolge = 0;
+            var antwort = ergebnis.Antwort;
 
             if (antwort is null || antwort.Produkte.Count == 0)
             {
@@ -74,14 +103,14 @@ public sealed class ApiImporter(OffClient client, Katalogschreiber schreiber, IL
                 break;
             }
 
-            if (einstellungen.Pause > TimeSpan.Zero)
-            {
-                await Task.Delay(einstellungen.Pause, ct);
-            }
+            await PausierenAsync(einstellungen, ct);
         }
 
         return statistik;
     }
+
+    private static Task PausierenAsync(ApiImportEinstellungen einstellungen, CancellationToken ct) =>
+        einstellungen.Pause > TimeSpan.Zero ? Task.Delay(einstellungen.Pause, ct) : Task.CompletedTask;
 
     /// <summary>
     /// Filtert die fuer den Katalog unbrauchbaren Datensaetze heraus. Open Food Facts

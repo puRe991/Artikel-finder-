@@ -53,9 +53,28 @@ var csvBefehl = new Command("csv", "Importiert aus dem Open-Food-Facts-Bulk-Expo
     dateiOption, csvLandOption, csvMaxOption, stapelOption,
 };
 
+// --- Befehle: export / seed ---
+// Ein aufgebauter Katalog soll nicht an der lokalen SQLite-Datei hängen: 'export' schreibt
+// ihn als gepacktes TSV, 'seed' liest ihn in eine frische Datenbank zurück.
+var katalogDateiOption = new Option<string>(
+    "--datei",
+    () => "../../daten/katalog-seed.tsv.gz",
+    "Pfad der Katalogdatei (.gz wird gepackt).");
+
+var exportBefehl = new Command("export", "Schreibt den Artikelkatalog in eine portable Datei.")
+{
+    katalogDateiOption,
+};
+
+var seedStapelOption = new Option<int>("--stapel", () => 2000, "Artikel pro Schreibvorgang.");
+var seedBefehl = new Command("seed", "Liest eine mit 'export' erzeugte Katalogdatei ein.")
+{
+    katalogDateiOption, seedStapelOption,
+};
+
 var wurzel = new RootCommand("Befüllt den Artikel-Finder-Katalog mit Artikeln aus Open Food Facts.")
 {
-    apiBefehl, csvBefehl,
+    apiBefehl, csvBefehl, exportBefehl, seedBefehl,
 };
 
 wurzel.AddGlobalOption(datenbankOption);
@@ -122,6 +141,51 @@ csvBefehl.SetHandler(async kontext =>
     protokoll.LogInformation("Fertig. {Statistik}", statistik);
 });
 
+exportBefehl.SetHandler(async kontext =>
+{
+    var dienste = DiensteBauen(
+        kontext.ParseResult.GetValueForOption(datenbankOption)!,
+        kontext.ParseResult.GetValueForOption(userAgentOption)!,
+        kontext.ParseResult.GetValueForOption(ausfuehrlichOption));
+
+    await using var _ = dienste;
+    var ct = kontext.GetCancellationToken();
+
+    var pfad = kontext.ParseResult.GetValueForOption(katalogDateiOption)!;
+    var protokoll = dienste.GetRequiredService<ILoggerFactory>().CreateLogger("Export");
+
+    var anzahl = await dienste.GetRequiredService<Katalogdatei>().SchreibenAsync(pfad, ct);
+    var groesse = new FileInfo(pfad).Length / 1024.0;
+
+    protokoll.LogInformation(
+        "{Anzahl} Artikel nach {Datei} geschrieben ({Groesse:0} KB).", anzahl, pfad, groesse);
+});
+
+seedBefehl.SetHandler(async kontext =>
+{
+    var dienste = DiensteBauen(
+        kontext.ParseResult.GetValueForOption(datenbankOption)!,
+        kontext.ParseResult.GetValueForOption(userAgentOption)!,
+        kontext.ParseResult.GetValueForOption(ausfuehrlichOption));
+
+    await using var _ = dienste;
+    var ct = kontext.GetCancellationToken();
+    await DatenbankVorbereitenAsync(dienste, ct);
+
+    var pfad = kontext.ParseResult.GetValueForOption(katalogDateiOption)!;
+    var protokoll = dienste.GetRequiredService<ILoggerFactory>().CreateLogger("Seed");
+
+    protokoll.LogInformation("Lese Katalog aus {Datei}.", pfad);
+
+    var statistik = await dienste.GetRequiredService<Katalogdatei>().LesenAsync(
+        pfad,
+        dienste.GetRequiredService<Katalogschreiber>(),
+        Math.Max(1, kontext.ParseResult.GetValueForOption(seedStapelOption)),
+        ct);
+
+    protokoll.LogInformation("Fertig. {Statistik}", statistik);
+});
+
 return await wurzel.InvokeAsync(args);
 
 static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool ausfuehrlich)
@@ -138,7 +202,7 @@ static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool au
 
     dienste.AddDbContext<ArtikelFinderDbContext>(o => o.UseSqlite(verbindung));
 
-    dienste.AddHttpClient<OffClient>(http =>
+    dienste.AddHttpClient<IOffClient, OffClient>(http =>
     {
         http.BaseAddress = new Uri("https://world.openfoodfacts.org/");
         http.Timeout = TimeSpan.FromSeconds(60);
@@ -147,6 +211,7 @@ static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool au
     });
 
     dienste.AddScoped<Katalogschreiber>();
+    dienste.AddScoped<Katalogdatei>();
     dienste.AddScoped<ApiImporter>();
     dienste.AddScoped<CsvImporter>();
 

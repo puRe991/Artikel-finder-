@@ -14,7 +14,8 @@ backend/                              .NET-8-Solution
   src/ArtikelFinder.Shared/           DTOs, EAN- und Suchtext-Normalisierung
   src/ArtikelFinder.Api/              Web-API, EF-Core-Modell, Migrationen
   src/ArtikelFinder.Import/           Konsolen-Tool für den Open-Food-Facts-Import
-  tests/ArtikelFinder.Api.Tests/      44 Tests gegen echtes SQLite
+  daten/katalog-seed.tsv.gz           Vorbefüllter Artikelkatalog (siehe „Katalog sichern")
+  tests/ArtikelFinder.Api.Tests/      55 Tests gegen echtes SQLite
 android/                              Kotlin + Jetpack Compose
   app/src/main/java/de/artikelfinder/app/
     data/                             Retrofit-API, Room-Cache, Repository
@@ -60,6 +61,29 @@ Beide Befehle schreiben in dieselbe Datenbank wie die API
 ```bash
 dotnet run -- api --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
 ```
+
+Open Food Facts antwortet im Dauerbetrieb regelmäßig mit 503. Der Importer wiederholt jede
+Seite mit wachsender Wartezeit; bleibt sie trotzdem aus, überspringt er sie und macht mit
+der nächsten weiter. Wie viele Seiten dabei verloren gingen, steht am Ende in der
+Zusammenfassung — dann den Lauf einfach wiederholen, er ist idempotent (Abgleich über EAN).
+
+### Katalog sichern und wiederherstellen
+
+Ein vollständiger Importlauf dauert rund 40 Minuten. Damit das Ergebnis nicht an einer
+lokalen SQLite-Datei hängt, liegt es als gepacktes TSV im Repository:
+
+```bash
+# Frische Datenbank aus dem mitgelieferten Katalog aufbauen (Sekunden statt Minuten):
+dotnet run -- seed
+
+# Nach eigenen Ergänzungen den Katalog neu ablegen:
+dotnet run -- export
+```
+
+Standardpfad ist `backend/daten/katalog-seed.tsv.gz`. Die Datei enthält Name, Marke, EAN,
+Kategorie und Bild-URL — bewusst **keine** Preise und Standorte: die sind markt- und
+personenbezogen und gehören nicht in eine allgemeine Katalogdatei. `seed` ist idempotent
+und lässt selbst erfasste Artikel unangetastet.
 
 ### 3. App bauen
 
@@ -130,7 +154,7 @@ falscher Barcode führt direkt zum falschen Artikel.
 ## Tests
 
 ```bash
-cd backend && dotnet test          # 44 Tests
+cd backend && dotnet test          # 55 Tests
 cd android && ./gradlew test       # 10 Tests
 ```
 
@@ -157,6 +181,12 @@ InMemory-Provider — die interessanten Fehler dieses Projekts (Sortierung von
 
 ## Rechtliches
 
-Der Katalog stammt aus Open Food Facts (Open Database License). Kaufland.de wird **nicht**
-gescrapt — das verstößt gegen deren AGB. Preise und Standorte werden ausschließlich selbst
-im Markt erfasst.
+Der Katalog (`backend/daten/katalog-seed.tsv.gz`) stammt aus
+[Open Food Facts](https://world.openfoodfacts.org) und steht unter der
+[Open Database License](https://opendatacommons.org/licenses/odbl/1-0/). Weil die Datei
+hier mitgeliefert wird, ist das eine Weitergabe: Namensnennung ist Pflicht, und eine
+veränderte Fassung der Datenbank muss unter derselben Lizenz stehen. Für den privaten
+Gebrauch ist das folgenlos — vor einer Veröffentlichung (Phase 3) aber zu beachten.
+
+Kaufland.de wird **nicht** gescrapt — das verstößt gegen deren AGB. Preise und Standorte
+werden ausschließlich selbst im Markt erfasst.
