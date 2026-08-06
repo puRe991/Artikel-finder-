@@ -19,8 +19,8 @@ backend/                              .NET-8-Solution
 android/                              Kotlin + Jetpack Compose
   app/src/main/java/de/artikelfinder/app/
     data/                             Retrofit-API, Room-Cache, Repository
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf
-  app/src/test/                       10 Tests (Repository gegen MockWebServer)
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | einrichtung
+  app/src/test/                       17 Tests (Repository gegen MockWebServer)
 ```
 
 ## Schnellstart
@@ -90,13 +90,23 @@ und lässt selbst erfasste Artikel unangetastet.
 ```bash
 cd android
 echo "sdk.dir=$ANDROID_HOME" > local.properties
-./gradlew :app:assembleDebug
+
+./gradlew :app:assembleDebug   # zum Entwickeln
+./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
 ```
 
-Die API-Adresse steht in `app/build.gradle.kts` als `API_BASIS_URL`. `10.0.2.2` ist der
-Host aus dem Emulator; für ein echtes Gerät die LAN-Adresse des Rechners eintragen und
-prüfen, dass sie zu `res/xml/network_security_config.xml` passt (Klartext-HTTP ist nur für
-private Adressbereiche erlaubt).
+Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
+`app/build/outputs/apk/`. `arm64-v8a` passt auf praktisch jedes Handy der letzten Jahre,
+`armeabi-v7a` auf ältere Geräte.
+
+**Die Serveradresse wird beim ersten Start in der App eingegeben**, nicht einkompiliert.
+Die App fragt sie ab, prüft sie gegen `/health` und merkt sie sich; ändern lässt sie sich
+später über das Zahnrad auf der Suchseite. Damit läuft dieselbe APK im Emulator
+(`10.0.2.2`) und im WLAN (`192.168.x.y`).
+
+Damit das Handy den Rechner erreicht, müssen beide im selben WLAN sein und die API auf
+allen Schnittstellen lauschen — `appsettings.Development.json` bindet dafür bereits
+`http://0.0.0.0:5080`. Gegebenenfalls die Firewall für Port 5080 freigeben.
 
 ## Endpunkte
 
@@ -155,7 +165,7 @@ falscher Barcode führt direkt zum falschen Artikel.
 
 ```bash
 cd backend && dotnet test          # 55 Tests
-cd android && ./gradlew test       # 10 Tests
+cd android && ./gradlew test       # 17 Tests
 ```
 
 Die Backend-Tests laufen gegen echtes SQLite (In-Memory), nicht gegen den

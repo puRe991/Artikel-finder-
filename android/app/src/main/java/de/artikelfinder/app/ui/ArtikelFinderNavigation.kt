@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import de.artikelfinder.app.ui.bearbeiten.BearbeitenBildschirm
 import de.artikelfinder.app.ui.detail.DetailBildschirm
+import de.artikelfinder.app.ui.einrichtung.EinrichtungBildschirm
 import de.artikelfinder.app.ui.gaenge.GaengeBildschirm
 import de.artikelfinder.app.ui.gaenge.GangArtikelBildschirm
 import de.artikelfinder.app.ui.navigation.Ziele
@@ -17,8 +18,31 @@ import de.artikelfinder.app.ui.suche.SucheBildschirm
 import de.artikelfinder.app.ui.verlauf.VerlaufBildschirm
 
 @Composable
-fun ArtikelFinderNavigation(navController: NavHostController = rememberNavController()) {
-    NavHost(navController = navController, startDestination = Ziele.SUCHE) {
+fun ArtikelFinderNavigation(
+    startZiel: String,
+    navController: NavHostController = rememberNavController(),
+) {
+    NavHost(navController = navController, startDestination = startZiel) {
+
+        composable(Ziele.EINRICHTUNG) {
+            // Beim ersten Start gibt es kein Zurück — ohne Serveradresse geht nichts.
+            val istErstEinrichtung = startZiel == Ziele.EINRICHTUNG
+            val zurueck: (() -> Unit)? =
+                if (istErstEinrichtung) null else fun() { navController.popBackStack() }
+
+            EinrichtungBildschirm(
+                beiFertig = {
+                    if (istErstEinrichtung) {
+                        navController.navigate(Ziele.SUCHE) {
+                            popUpTo(Ziele.EINRICHTUNG) { inclusive = true }
+                        }
+                    } else {
+                        navController.popBackStack()
+                    }
+                },
+                beiZurueck = zurueck,
+            )
+        }
 
         composable(Ziele.SUCHE) {
             SucheBildschirm(
@@ -26,6 +50,7 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
                 beiScan = { navController.navigate(Ziele.SCAN) },
                 beiGaengen = { navController.navigate(Ziele.GAENGE) },
                 beiNeuemArtikel = { navController.navigate(Ziele.bearbeiten()) },
+                beiEinstellungen = { navController.navigate(Ziele.EINRICHTUNG) },
             )
         }
 

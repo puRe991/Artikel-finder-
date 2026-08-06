@@ -7,6 +7,7 @@ import android.net.Uri
  * damit die Argumente an genau einer Stelle kodiert werden.
  */
 object Ziele {
+    const val EINRICHTUNG = "einrichtung"
     const val SUCHE = "suche"
     const val SCAN = "scan"
     const val GAENGE = "gaenge"

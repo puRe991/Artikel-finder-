@@ -33,6 +33,25 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        // Zum Weitergeben: verkleinert wie ein Release, aber mit dem Debug-Schlüssel
+        // signiert, damit die APK ohne eigenen Keystore installierbar bleibt. Nicht für
+        // den Play Store — dafür braucht es 'release' mit einem echten Schlüssel.
+        create("dist") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
+    }
+
+    // Ein APK je Prozessorarchitektur statt eines Sammelpakets: die nativen Bibliotheken
+    // von ML Kit und CameraX machen sonst rund 19 MB aus, von denen ein Gerät 5 nutzt.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
     }
 
     compileOptions {
@@ -92,6 +111,7 @@ dependencies {
     implementation(libs.mlkit.barcode.scanning)
 
     implementation(libs.coil.compose)
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

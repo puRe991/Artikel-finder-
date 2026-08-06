@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -47,6 +48,7 @@ fun SucheBildschirm(
     beiScan: () -> Unit,
     beiGaengen: () -> Unit,
     beiNeuemArtikel: () -> Unit,
+    beiEinstellungen: () -> Unit,
     viewModel: SucheViewModel = hiltViewModel(),
 ) {
     val zustand by viewModel.zustand.collectAsStateWithLifecycle()
@@ -58,6 +60,9 @@ fun SucheBildschirm(
                 actions = {
                     IconButton(onClick = beiGaengen) {
                         Icon(Icons.Default.Map, contentDescription = "Gänge")
+                    }
+                    IconButton(onClick = beiEinstellungen) {
+                        Icon(Icons.Default.Settings, contentDescription = "Serveradresse")
                     }
                 },
             )

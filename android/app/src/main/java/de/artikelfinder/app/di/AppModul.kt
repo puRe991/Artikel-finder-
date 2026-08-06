@@ -12,6 +12,8 @@ import de.artikelfinder.app.BuildConfig
 import de.artikelfinder.app.data.local.ArtikelCacheDao
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.remote.ArtikelApi
+import de.artikelfinder.app.data.remote.BasisUrlInterceptor
+import javax.inject.Qualifier
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -19,6 +21,11 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+
+/** Der Client, der die eingestellte Serveradresse einsetzt. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class ApiClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -32,12 +39,16 @@ object AppModul {
         explicitNulls = false
     }
 
+    /**
+     * Ohne Adressumschreibung — für den Verbindungstest bei der Einrichtung, der gegen die
+     * gerade eingetippte Adresse läuft und nicht gegen die gespeicherte.
+     */
     @Provides
     @Singleton
     fun okHttp(): OkHttpClient = OkHttpClient.Builder()
-        // Im Markt ist das Netz oft schlecht; lieber etwas länger warten als sofort abbrechen.
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        // Beim Einrichten soll ein falscher Host schnell auffallen, nicht erst nach 15 s.
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .apply {
             if (BuildConfig.DEBUG) {
                 addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
@@ -47,7 +58,19 @@ object AppModul {
 
     @Provides
     @Singleton
-    fun retrofit(client: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
+    @ApiClient
+    fun apiOkHttp(basis: OkHttpClient, umschreiber: BasisUrlInterceptor): OkHttpClient =
+        basis.newBuilder()
+            // Im Markt ist das WLAN oft schlecht; lieber etwas länger warten als abbrechen.
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(umschreiber)
+            .build()
+
+    @Provides
+    @Singleton
+    fun retrofit(@ApiClient client: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
+        // Platzhalter: Schema, Host und Port ersetzt der BasisUrlInterceptor zur Laufzeit.
         .baseUrl(BuildConfig.API_BASIS_URL)
         .client(client)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
