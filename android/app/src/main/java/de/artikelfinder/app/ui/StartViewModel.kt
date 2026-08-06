@@ -3,24 +3,27 @@ package de.artikelfinder.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import de.artikelfinder.app.data.einstellungen.Servereinstellungen
-import kotlinx.coroutines.flow.SharingStarted
+import de.artikelfinder.app.data.Aufbauzustand
+import de.artikelfinder.app.data.Katalogaufbau
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Entscheidet, ob die App mit der Suche oder mit der Einrichtung startet. Ohne
- * eingestellte Serveradresse würde jeder Bildschirm nur Netzwerkfehler zeigen.
- *
- * `null` heißt "noch nicht gelesen" — solange bleibt der Startbildschirm leer, statt
- * kurz die falsche Seite aufblitzen zu lassen.
+ * Beim ersten Start wird der mitgelieferte Katalog in die Datenbank geschrieben. Das
+ * dauert einige Sekunden und braucht deshalb eine sichtbare Rückmeldung — danach startet
+ * die App sofort.
  */
 @HiltViewModel
-class StartViewModel @Inject constructor(einstellungen: Servereinstellungen) : ViewModel() {
+class StartViewModel @Inject constructor(private val aufbau: Katalogaufbau) : ViewModel() {
 
-    val istEingerichtet: StateFlow<Boolean?> = einstellungen.basisUrl
-        .map { !it.isNullOrBlank() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val zustand: StateFlow<Aufbauzustand> = aufbau.zustand
+
+    init {
+        starten()
+    }
+
+    fun starten() {
+        viewModelScope.launch { aufbau.sicherstellen() }
+    }
 }

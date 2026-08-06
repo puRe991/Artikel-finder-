@@ -18,21 +18,12 @@ private val DatumZeitFormat: DateTimeFormatter =
 
 fun Double.alsPreis(): String = Waehrung.format(this)
 
-/**
- * Formatiert einen ISO-8601-Zeitstempel der API. Bei unerwarteten Werten wird der Rohwert
- * durchgereicht — ein Datumsfehler soll keinen Bildschirm zum Absturz bringen.
- */
-fun String.alsDatum(): String = formatieren(DatumFormat)
+fun Long.alsDatum(): String = DatumFormat.format(Instant.ofEpochMilli(this))
 
-fun String.alsDatumZeit(): String = formatieren(DatumZeitFormat)
-
-private fun String.formatieren(format: DateTimeFormatter): String =
-    runCatching { format.format(Instant.parse(this)) }
-        .recoverCatching { format.format(java.time.OffsetDateTime.parse(this).toInstant()) }
-        .getOrDefault(this)
+fun Long.alsDatumZeit(): String = DatumZeitFormat.format(Instant.ofEpochMilli(this))
 
 /** Menschenlesbarer Gültigkeitszeitraum einer Werbeaktion. */
-fun werbezeitraumText(von: String?, bis: String?): String? = when {
+fun werbezeitraumText(von: Long?, bis: Long?): String? = when {
     von != null && bis != null -> "${von.alsDatum()} – ${bis.alsDatum()}"
     bis != null -> "bis ${bis.alsDatum()}"
     von != null -> "ab ${von.alsDatum()}"

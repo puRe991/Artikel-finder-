@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
@@ -20,9 +19,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // 10.0.2.2 ist der Host des Android-Emulators. Auf einem echten Geraet die
-        // LAN-Adresse des Rechners eintragen, auf dem die API laeuft.
-        buildConfigField("String", "API_BASIS_URL", "\"http://10.0.2.2:5080/\"")
     }
 
     buildTypes {
@@ -65,7 +61,10 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 
     packaging {
@@ -98,11 +97,6 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.serialization)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
-    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.camera.core)
     implementation(libs.camera.camera2)
@@ -111,9 +105,9 @@ dependencies {
     implementation(libs.mlkit.barcode.scanning)
 
     implementation(libs.coil.compose)
-    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

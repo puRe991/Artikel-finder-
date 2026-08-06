@@ -7,8 +7,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.artikelfinder.app.data.Abruf
 import de.artikelfinder.app.data.ArtikelDetail
 import de.artikelfinder.app.data.ArtikelRepository
-import de.artikelfinder.app.data.remote.PreisErfassenDto
-import de.artikelfinder.app.data.remote.StandortErfassenDto
 import de.artikelfinder.app.ui.navigation.Ziele
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +17,6 @@ import javax.inject.Inject
 data class DetailZustand(
     val detail: ArtikelDetail? = null,
     val laedt: Boolean = true,
-    val ausCache: Boolean = false,
     val fehler: String? = null,
     val speichert: Boolean = false,
     /** Einmalige Rückmeldung für eine Snackbar. */
@@ -49,7 +46,7 @@ class DetailViewModel @Inject constructor(
                 is Abruf.Erfolg -> _zustand.value.copy(
                     detail = ergebnis.wert,
                     laedt = false,
-                    ausCache = ergebnis.ausCache,
+                    fehler = null,
                 )
                 is Abruf.Fehler -> _zustand.value.copy(laedt = false, fehler = ergebnis.meldung)
             }
@@ -59,43 +56,21 @@ class DetailViewModel @Inject constructor(
     fun preisErfassen(
         preis: Double,
         werbepreis: Double?,
-        werbepreisGueltigBis: String?,
+        werbepreisGueltigBis: Long?,
         erfasstVon: String?,
     ) {
-        speichern {
-            repository.preisErfassen(
-                artikelId,
-                PreisErfassenDto(
-                    preis = preis,
-                    werbepreis = werbepreis,
-                    werbepreisGueltigBis = werbepreisGueltigBis,
-                    erfasstVon = erfasstVon,
-                ),
-            )
-        }
+        speichern { repository.preisErfassen(artikelId, preis, werbepreis, werbepreisGueltigBis, erfasstVon) }
     }
 
     fun standortErfassen(gang: String, regalBeschreibung: String?, erfasstVon: String?) {
-        speichern {
-            repository.standortErfassen(
-                artikelId,
-                StandortErfassenDto(
-                    gang = gang,
-                    regalBeschreibung = regalBeschreibung,
-                    erfasstVon = erfasstVon,
-                ),
-            )
-        }
+        speichern { repository.standortErfassen(artikelId, gang, regalBeschreibung, erfasstVon) }
     }
 
     fun meldungGelesen() {
         _zustand.value = _zustand.value.copy(meldung = null)
     }
 
-    /**
-     * Nach jeder Erfassung wird neu geladen statt lokal gemerged: der Server berechnet, ob
-     * ein Werbepreis gerade aktiv ist, und diese Antwort soll die Anzeige bestimmen.
-     */
+    /** Nach jeder Erfassung neu laden, damit Preis, Standort und Verlauf zusammenpassen. */
     private fun speichern(block: suspend () -> Abruf<*>) {
         viewModelScope.launch {
             _zustand.value = _zustand.value.copy(speichert = true)

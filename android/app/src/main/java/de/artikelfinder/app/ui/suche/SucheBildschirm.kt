@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -39,7 +38,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.artikelfinder.app.ui.komponenten.ArtikelKarte
 import de.artikelfinder.app.ui.komponenten.FehlerAnzeige
 import de.artikelfinder.app.ui.komponenten.LeerAnzeige
-import de.artikelfinder.app.ui.komponenten.OfflineHinweis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +46,6 @@ fun SucheBildschirm(
     beiScan: () -> Unit,
     beiGaengen: () -> Unit,
     beiNeuemArtikel: () -> Unit,
-    beiEinstellungen: () -> Unit,
     viewModel: SucheViewModel = hiltViewModel(),
 ) {
     val zustand by viewModel.zustand.collectAsStateWithLifecycle()
@@ -60,9 +57,6 @@ fun SucheBildschirm(
                 actions = {
                     IconButton(onClick = beiGaengen) {
                         Icon(Icons.Default.Map, contentDescription = "Gänge")
-                    }
-                    IconButton(onClick = beiEinstellungen) {
-                        Icon(Icons.Default.Settings, contentDescription = "Serveradresse")
                     }
                 },
             )
@@ -104,10 +98,6 @@ fun SucheBildschirm(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            if (zustand.ausCache) {
-                OfflineHinweis()
-            }
-
             Box(modifier = Modifier.weight(1f)) {
                 when {
                     zustand.fehler != null -> FehlerAnzeige(
@@ -116,11 +106,11 @@ fun SucheBildschirm(
                     )
 
                     zustand.zeigtVerlauf -> Trefferliste(
-                        titel = "Zuletzt angesehen",
-                        artikel = zustand.zuletztGesehen,
-                        leerTitel = "Noch keine Artikel angesehen",
-                        leerHinweis = "Suche nach einem Namen oder scanne einen Barcode, "
-                            + "um Preis und Standort zu sehen.",
+                        titel = "Zuletzt bearbeitet",
+                        artikel = zustand.zuletztBearbeitet,
+                        leerTitel = "Noch nichts erfasst",
+                        leerHinweis = "Suche nach einem Namen oder scanne einen Barcode. "
+                            + "Preise und Gänge trägst du beim Einkaufen selbst ein.",
                         beiArtikel = beiArtikel,
                     )
 

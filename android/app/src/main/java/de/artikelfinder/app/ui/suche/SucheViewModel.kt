@@ -22,12 +22,11 @@ import javax.inject.Inject
 data class SucheZustand(
     val suchbegriff: String = "",
     val treffer: List<Artikel> = emptyList(),
-    val zuletztGesehen: List<Artikel> = emptyList(),
+    val zuletztBearbeitet: List<Artikel> = emptyList(),
     val kategorien: List<Kategorie> = emptyList(),
     val gewaehlteKategorieId: Int? = null,
     val nurMitWerbepreis: Boolean = false,
     val laedt: Boolean = false,
-    val ausCache: Boolean = false,
     val fehler: String? = null,
 ) {
     /** Ohne Filter und ohne Suchbegriff zeigt der Bildschirm die zuletzt gesehenen Artikel. */
@@ -55,8 +54,8 @@ class SucheViewModel @Inject constructor(
             .onEach { suchen() }
             .launchIn(viewModelScope)
 
-        repository.zuletztGesehen()
-            .onEach { liste -> _zustand.value = _zustand.value.copy(zuletztGesehen = liste) }
+        repository.zuletztBearbeitet()
+            .onEach { liste -> _zustand.value = _zustand.value.copy(zuletztBearbeitet = liste) }
             .launchIn(viewModelScope)
 
         viewModelScope.launch {
@@ -110,13 +109,11 @@ class SucheViewModel @Inject constructor(
                 is Abruf.Erfolg -> _zustand.value.copy(
                     treffer = ergebnis.wert,
                     laedt = false,
-                    ausCache = ergebnis.ausCache,
                     fehler = null,
                 )
                 is Abruf.Fehler -> _zustand.value.copy(
                     treffer = emptyList(),
                     laedt = false,
-                    ausCache = false,
                     fehler = ergebnis.meldung,
                 )
             }

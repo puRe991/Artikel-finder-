@@ -1,8 +1,8 @@
 package de.artikelfinder.app.data
 
 /**
- * Modelle für die UI. Getrennt von den Netzwerk-DTOs, damit ein Bildschirm nicht merkt,
- * ob seine Daten vom Server oder aus dem Offline-Cache kommen.
+ * Modelle für die UI. Zeitpunkte sind Millisekunden seit 1970 — die Daten kommen aus der
+ * lokalen Datenbank, es gibt keine ISO-Zeitstempel eines Servers mehr zu zerlegen.
  */
 data class Artikel(
     val id: String,
@@ -15,8 +15,6 @@ data class Artikel(
     val bildUrl: String? = null,
     val preis: Preis? = null,
     val standort: Standort? = null,
-    /** true, wenn die Daten aus dem lokalen Cache stammen und veraltet sein können. */
-    val ausCache: Boolean = false,
 )
 
 data class ArtikelDetail(
@@ -31,9 +29,9 @@ data class Preis(
     val preis: Double,
     val werbepreis: Double? = null,
     val werbepreisAktiv: Boolean = false,
-    val werbepreisGueltigVon: String? = null,
-    val werbepreisGueltigBis: String? = null,
-    val erfasstAm: String = "",
+    val werbepreisGueltigVon: Long? = null,
+    val werbepreisGueltigBis: Long? = null,
+    val erfasstAm: Long = 0,
     val erfasstVon: String? = null,
 ) {
     /** Was der Kunde heute zahlt. */
@@ -46,7 +44,7 @@ data class Standort(
     val regalBeschreibung: String? = null,
     val kartenX: Float? = null,
     val kartenY: Float? = null,
-    val erfasstAm: String = "",
+    val erfasstAm: Long = 0,
     val erfasstVon: String? = null,
 )
 
@@ -72,5 +70,5 @@ data class Verlaufseintrag(
     val entitaet: String,
     val beschreibung: String,
     val geaendertVon: String?,
-    val geaendertAm: String,
+    val geaendertAm: Long,
 )

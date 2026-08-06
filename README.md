@@ -3,200 +3,141 @@
 Artikelsuche für den Kaufland Gießen: Name, EAN, Normalpreis, laufender Werbepreis und der
 Gang, in dem der Artikel steht.
 
-Der Katalog wird aus [Open Food Facts](https://world.openfoodfacts.org/data) vorbefüllt
-(Name, Marke, EAN, Bild, Kategorie). Preise und Standorte gibt es dort nicht — die entstehen
-beim Einkaufen: scannen, Preis und Gang eintippen, fertig.
+**Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
+Der Artikelkatalog — gut 15.000 reale Produkte aus
+[Open Food Facts](https://world.openfoodfacts.org/data) — liegt in der App und wird beim
+ersten Start in die geräteeigene Datenbank geschrieben. Preise und Standorte trägst du
+beim Einkaufen selbst ein; sie bleiben auf dem Gerät.
+
+Eine Internetverbindung wird nur für die Produktbilder verwendet. Suche, Barcode-Scan,
+Preis- und Standorterfassung funktionieren vollständig offline.
 
 ## Projektstruktur
 
 ```
-backend/                              .NET-8-Solution
-  src/ArtikelFinder.Shared/           DTOs, EAN- und Suchtext-Normalisierung
-  src/ArtikelFinder.Api/              Web-API, EF-Core-Modell, Migrationen
-  src/ArtikelFinder.Import/           Konsolen-Tool für den Open-Food-Facts-Import
-  daten/katalog-seed.tsv.gz           Vorbefüllter Artikelkatalog (siehe „Katalog sichern")
-  tests/ArtikelFinder.Api.Tests/      55 Tests gegen echtes SQLite
-android/                              Kotlin + Jetpack Compose
+android/                              Die App — Kotlin, Jetpack Compose, Room
+  app/src/main/assets/                Der ausgelieferte Artikelkatalog
   app/src/main/java/de/artikelfinder/app/
-    data/                             Retrofit-API, Room-Cache, Repository
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | einrichtung
-  app/src/test/                       17 Tests (Repository gegen MockWebServer)
+    data/                             Room-Datenbank, Repository, Katalogaufbau
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf
+  app/src/test/                       27 Tests gegen echtes SQLite (Robolectric)
+
+backend/                              Werkzeug, nicht zur Laufzeit nötig
+  src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
+  src/ArtikelFinder.Api/              Datenmodell und Web-API für Phase 3 (Mehrbenutzer)
+  daten/katalog-seed.tsv.gz           Quelle des Katalogs in der App
+  tests/                              55 Tests
 ```
 
-## Schnellstart
+Das Backend wird für den Betrieb der App **nicht** gebraucht. Es bleibt im Projekt, weil es
+den Katalog erzeugt und den Weg zum Mehrbenutzerbetrieb (Phase 3) offenhält.
 
-Vorausgesetzt: .NET 8 SDK, JDK 17+, Android SDK (für die App).
-
-### 1. API starten
-
-```bash
-cd backend/src/ArtikelFinder.Api
-dotnet run
-```
-
-Läuft auf `http://0.0.0.0:5080`, legt die SQLite-Datei an, wendet die Migrationen an und
-seedet den Markt „Kaufland Gießen" samt Kategorieraster. Swagger-UI unter
-`http://localhost:5080/swagger`.
-
-### 2. Katalog befüllen
-
-```bash
-cd backend/src/ArtikelFinder.Import
-
-# Über die Such-API, eine Warengruppe:
-dotnet run -- api --kategorie en:milks --max 200
-
-# Standardliste (27 Warengruppen), dauert wegen der Ratenbegrenzung eine Weile:
-dotnet run -- api --max 500
-
-# Alternativ der Bulk-Export (mehrere GB, wird streamend gelesen):
-dotnet run -- csv --datei en.openfoodfacts.org.products.csv.gz --max 50000
-```
-
-Beide Befehle schreiben in dieselbe Datenbank wie die API
-(`--datenbank "Data Source=..."`, Standard `artikelfinder.db` im Arbeitsverzeichnis).
-
-**Vor dem ersten Lauf den User-Agent setzen.** Open Food Facts blockt anonyme Clients:
-
-```bash
-dotnet run -- api --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
-```
-
-Open Food Facts antwortet im Dauerbetrieb regelmäßig mit 503. Der Importer wiederholt jede
-Seite mit wachsender Wartezeit; bleibt sie trotzdem aus, überspringt er sie und macht mit
-der nächsten weiter. Wie viele Seiten dabei verloren gingen, steht am Ende in der
-Zusammenfassung — dann den Lauf einfach wiederholen, er ist idempotent (Abgleich über EAN).
-
-### Katalog sichern und wiederherstellen
-
-Ein vollständiger Importlauf dauert rund 40 Minuten. Damit das Ergebnis nicht an einer
-lokalen SQLite-Datei hängt, liegt es als gepacktes TSV im Repository:
-
-```bash
-# Frische Datenbank aus dem mitgelieferten Katalog aufbauen (Sekunden statt Minuten):
-dotnet run -- seed
-
-# Nach eigenen Ergänzungen den Katalog neu ablegen:
-dotnet run -- export
-```
-
-Standardpfad ist `backend/daten/katalog-seed.tsv.gz`. Die Datei enthält Name, Marke, EAN,
-Kategorie und Bild-URL — bewusst **keine** Preise und Standorte: die sind markt- und
-personenbezogen und gehören nicht in eine allgemeine Katalogdatei. `seed` ist idempotent
-und lässt selbst erfasste Artikel unangetastet.
-
-### 3. App bauen
+## App bauen
 
 ```bash
 cd android
 echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-./gradlew :app:assembleDebug   # zum Entwickeln
+./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
+./gradlew test                 # 27 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
-`app/build/outputs/apk/`. `arm64-v8a` passt auf praktisch jedes Handy der letzten Jahre,
-`armeabi-v7a` auf ältere Geräte.
+`app/build/outputs/apk/`. `arm64-v8a` passt auf praktisch jedes Handy der letzten Jahre.
 
-**Die Serveradresse wird beim ersten Start in der App eingegeben**, nicht einkompiliert.
-Die App fragt sie ab, prüft sie gegen `/health` und merkt sie sich; ändern lässt sie sich
-später über das Zahnrad auf der Suchseite. Damit läuft dieselbe APK im Emulator
-(`10.0.2.2`) und im WLAN (`192.168.x.y`).
+Beim ersten Start baut die App den Katalog auf — das dauert wenige Sekunden und zeigt einen
+Fortschrittsbalken. Danach startet sie sofort.
 
-Damit das Handy den Rechner erreicht, müssen beide im selben WLAN sein und die API auf
-allen Schnittstellen lauschen — `appsettings.Development.json` bindet dafür bereits
-`http://0.0.0.0:5080`. Gegebenenfalls die Firewall für Port 5080 freigeben.
+## Katalog erneuern
 
-## Endpunkte
+Nur nötig, wenn du neue Artikel aus Open Food Facts holen willst. Dafür wird das
+.NET-Werkzeug gebraucht:
 
-| Methode | Pfad | Zweck |
-| --- | --- | --- |
-| GET | `/api/artikel?q=&kategorieId=&nurMitWerbepreis=&seite=` | Volltextsuche mit Filtern |
-| GET | `/api/artikel/{id}` | Artikel mit Preis- und Standorthistorie |
-| GET | `/api/artikel/ean/{ean}` | Barcode-Lookup (404 = unbekannt) |
-| POST | `/api/artikel` | Anlegen, optional mit Erstpreis und Standort |
-| PUT/DELETE | `/api/artikel/{id}` | Stammdaten ändern / löschen |
-| POST | `/api/artikel/{id}/preise` | Preis erfassen |
-| POST | `/api/artikel/{id}/standorte` | Standort erfassen |
-| GET | `/api/artikel/{id}/verlauf` | Änderungsverlauf |
-| GET | `/api/kategorien`, `/api/maerkte` | Stammdaten |
-| GET | `/api/maerkte/{id}/gaenge` | Belegte Gänge mit Artikelzahl |
-| GET | `/api/maerkte/{id}/gaenge/{gang}/artikel` | Artikel eines Gangs |
+```bash
+cd backend/src/ArtikelFinder.Import
+
+# Artikel holen (dauert je nach Umfang bis zu einer Stunde):
+dotnet run -- api --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
+
+# Katalogdatei neu schreiben:
+dotnet run -- export
+```
+
+Anschließend `backend/daten/katalog-seed.tsv.gz` entpackt nach
+`android/app/src/main/assets/katalog-seed.tsv` kopieren und die App neu bauen.
+
+Open Food Facts antwortet im Dauerbetrieb regelmäßig mit 503. Der Importer wiederholt jede
+Seite mit wachsender Wartezeit, überspringt sie sonst und macht weiter. Wie viele Seiten
+dabei verloren gingen, steht am Ende in der Zusammenfassung — dann den Lauf wiederholen, er
+ist idempotent (Abgleich über EAN).
 
 ## Entwurfsentscheidungen
 
-**Preise und Standorte hängen am Markt, nicht am Artikel allein.** `MarktId` steckt von
-Anfang an in beiden Tabellen. Der Ausbau auf weitere Filialen (Phase 3) kostet damit keine
-Datenmigration — nur zusätzliche Zeilen in `Maerkte`.
+**Der Katalog liegt als Textdatei bei, nicht als fertige Datenbank.** 2,2 MB TSV statt
+mehrerer Megabyte SQLite, und beim Einlesen wird der Suchindex passend zur eingebauten
+Normalisierung neu aufgebaut. Der Aufbau kostet einmalig wenige Sekunden.
+
+**Der Build-Prozess entpackt `.gz`-Assets selbsttätig und schneidet die Endung ab.** Die
+Datei heißt in der App deshalb `katalog-seed.tsv`. Der Katalogaufbau erkennt am Dateikopf,
+ob gepackte oder ungepackte Daten vorliegen, statt sich auf eine Variante zu verlassen.
+
+**Preise und Standorte hängen am Markt, nicht am Artikel allein.** `marktId` steckt von
+Anfang an in beiden Tabellen. Der Ausbau auf weitere Filialen kostet damit keine
+Datenmigration.
 
 **Erfassungen werden angehängt, nie überschrieben.** Der jüngste Eintrag pro
 (Artikel, Markt) ist der aktuelle. Die Preishistorie und der „steht jetzt in Gang 3
-statt 7"-Fall fallen dadurch ohne Zusatztabelle ab; der Änderungsverlauf hält
-zusätzlich fest, wer wann was geändert hat.
+statt 7"-Fall fallen dadurch ohne Zusatztabelle ab; der Änderungsverlauf hält zusätzlich
+fest, wer wann was geändert hat.
 
-**Nutzerdaten gewinnen gegen den Import.** Ein Artikel, den du im Markt selbst angelegt
-hast, wird von einem späteren Import-Lauf nicht angefasst. Bei importierten Artikeln füllt
-der Import nur leere Felder auf. Ohne diese Regel räumt ein Nachtlauf die Arbeit eines
-Einkaufs weg.
-
-**Volltextsuche über eine normalisierte Spalte statt FTS.** `Artikel.SuchText` enthält
-Name und Marke kleingeschrieben, ohne Satzzeichen und mit beiden Umlaut-Schreibweisen
-(„Bärenmarke" → `baerenmarke barenmarke`). Damit findet sowohl `mueller` als auch `muller`
-den Artikel, und die Suche verhält sich auf SQLite und PostgreSQL identisch — provider-
-spezifische Volltextindizes hätten das nicht getan.
-
-**DateTimeOffset wird auf SQLite als Ticks gespeichert.** SQLite lehnt `ORDER BY` auf
-`DateTimeOffset` ab, und genau das braucht jede „jüngster Preis"-Abfrage. Ein Value
-Converter (`SqliteZeitKonverter`) legt die Werte als UTC-Ticks ab; auf PostgreSQL bleibt
-der native `timestamptz`.
-
-**Offline: lesen ja, schreiben nein.** Die App hält die zuletzt gesehenen Artikel in Room
-vor und zeigt sie ohne Netz mit deutlichem Hinweis an. Erfassungen brauchen dagegen eine
-Verbindung — eine stille Warteschlange würde verschleiern, ob der Preis angekommen ist.
-Eine echte Offline-Erfassung lohnt sich erst mit dem Mehrbenutzerbetrieb, wenn ohnehin
-Konflikte aufgelöst werden müssen.
+**Volltextsuche über eine normalisierte Spalte.** `suchtext` enthält Name und Marke
+kleingeschrieben, ohne Satzzeichen und mit beiden Umlaut-Schreibweisen („Bärenmarke" →
+`baerenmarke barenmarke`). Damit findet sowohl `mueller` als auch `muller` den Artikel.
+Die Normalisierung liegt in App und Backend doppelt vor und wird beidseitig gegen
+dieselben Beispiele getestet — weicht eine Seite ab, findet die App Katalogartikel nicht
+mehr.
 
 **Barcode-Treffer werden doppelt bestätigt.** Ein Code gilt erst nach zweimaliger Erkennung
 hintereinander. Bei verknitterten Etiketten sind Einzelbild-Fehlerkennungen häufig, und ein
-falscher Barcode führt direkt zum falschen Artikel.
+falscher Barcode führt direkt zum falschen Artikel. Die Auswertung läuft über ML Kit
+vollständig auf dem Gerät.
 
 ## Tests
 
 ```bash
+cd android && ./gradlew test       # 27 Tests
 cd backend && dotnet test          # 55 Tests
-cd android && ./gradlew test       # 17 Tests
 ```
 
-Die Backend-Tests laufen gegen echtes SQLite (In-Memory), nicht gegen den
-InMemory-Provider — die interessanten Fehler dieses Projekts (Sortierung von
-`DateTimeOffset`, partielle Indizes, `LIKE`-Verhalten) treten nur beim echten Provider auf.
+Die App-Tests laufen unter Robolectric gegen echtes SQLite und lesen die tatsächlich
+ausgelieferte Katalogdatei über den Asset-Manager ein — nicht über den Quellbaum. Genau
+dieser Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
 
-## Offen (nach Ausbaustufen)
+## Offen
 
 **Phase 2**
 - Interaktive Grundriss-Karte (SVG) mit anklickbaren Zonen. Die Koordinatenfelder
-  (`KartenX`, `KartenY` als relative 0..1-Werte) und `Markt.GrundrissUrl` liegen im Modell
-  bereit, die App nutzt bisher nur die Gang-Liste.
+  (`karten_x`, `karten_y` als relative 0..1-Werte) liegen im Modell bereit, die App nutzt
+  bisher nur die Gang-Liste.
 - Erinnerung „Angebot läuft bald ab" — die Gültigkeitszeiträume sind erfasst, es fehlt der
   Hintergrundjob plus Benachrichtigung.
+- Sicherung der eigenen Erfassungen (Export/Import), damit ein Gerätewechsel sie nicht
+  verliert.
 
 **Phase 3**
-- Nutzerkonten. `ErfasstVon`/`GeaendertVon` sind heute Freitext und werden zur Nutzer-Id.
-- Authentifizierung an der API. Läuft im MVP bewusst offen im lokalen Netz.
-- Umstellung auf PostgreSQL: in `Program.cs` `UseNpgsql` eintragen, Npgsql referenzieren
-  und die Migrationen neu erzeugen. Der Value Converter für Zeitstempel entfällt dabei.
-- Bilder in einen Objektspeicher; aktuell werden nur die Bild-URLs von Open Food Facts
-  verlinkt.
+- Mehrbenutzerbetrieb über das Backend. `erfasst_von` ist heute Freitext und würde zur
+  Nutzer-Id.
+- Room-Migration statt Neuaufbau, sobald sich das Schema ändert — die Datenbank enthält
+  dann selbst erfasste Daten.
 
 ## Rechtliches
 
-Der Katalog (`backend/daten/katalog-seed.tsv.gz`) stammt aus
-[Open Food Facts](https://world.openfoodfacts.org) und steht unter der
-[Open Database License](https://opendatacommons.org/licenses/odbl/1-0/). Weil die Datei
-hier mitgeliefert wird, ist das eine Weitergabe: Namensnennung ist Pflicht, und eine
+Der Katalog stammt aus [Open Food Facts](https://world.openfoodfacts.org) und steht unter
+der [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/). Weil die Daten
+mit der App ausgeliefert werden, ist das eine Weitergabe: Namensnennung ist Pflicht, eine
 veränderte Fassung der Datenbank muss unter derselben Lizenz stehen. Für den privaten
-Gebrauch ist das folgenlos — vor einer Veröffentlichung (Phase 3) aber zu beachten.
+Gebrauch folgenlos, vor einer Veröffentlichung aber zu beachten.
 
 Kaufland.de wird **nicht** gescrapt — das verstößt gegen deren AGB. Preise und Standorte
 werden ausschließlich selbst im Markt erfasst.

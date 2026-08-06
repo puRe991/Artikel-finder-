@@ -47,7 +47,6 @@ import de.artikelfinder.app.ui.komponenten.Aktionsmarke
 import de.artikelfinder.app.ui.komponenten.FehlerAnzeige
 import de.artikelfinder.app.ui.komponenten.InfoKarte
 import de.artikelfinder.app.ui.komponenten.LadeAnzeige
-import de.artikelfinder.app.ui.komponenten.OfflineHinweis
 import de.artikelfinder.app.ui.werbezeitraumText
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,10 +94,6 @@ fun DetailBildschirm(
         snackbarHost = { SnackbarHost(snackbarZustand) },
     ) { abstand ->
         Column(modifier = Modifier.fillMaxSize().padding(abstand)) {
-            if (zustand.ausCache) {
-                OfflineHinweis()
-            }
-
             when {
                 zustand.laedt && zustand.detail == null -> LadeAnzeige()
 

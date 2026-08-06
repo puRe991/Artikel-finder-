@@ -1,168 +1,455 @@
 package de.artikelfinder.app.data
 
-import de.artikelfinder.app.data.local.ArtikelCacheDao
-import de.artikelfinder.app.data.remote.ArtikelAendernDto
-import de.artikelfinder.app.data.remote.ArtikelAnlegenDto
-import de.artikelfinder.app.data.remote.ArtikelApi
-import de.artikelfinder.app.data.remote.PreisErfassenDto
-import de.artikelfinder.app.data.remote.ProblemDetailsDto
-import de.artikelfinder.app.data.remote.StandortErfassenDto
+import de.artikelfinder.app.data.Katalogaufbau.Companion.QUELLE_NUTZER
+import de.artikelfinder.app.data.Katalogaufbau.Companion.STANDARD_MARKT
+import de.artikelfinder.app.data.local.ArtikelDatenbank
+import de.artikelfinder.app.data.local.ArtikelEintrag
+import de.artikelfinder.app.data.local.ArtikelMitStand
+import de.artikelfinder.app.data.local.PreisEintrag
+import de.artikelfinder.app.data.local.StandortEintrag
+import de.artikelfinder.app.data.local.VerlaufEintrag
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.Json
-import retrofit2.HttpException
-import java.io.IOException
+import java.util.Locale
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Ergebnis eines Aufrufs, der auch ohne Netz eine brauchbare Antwort liefern soll. */
+/** Ergebnis einer Operation. Fehler sind hier fachlich (EAN doppelt), nicht technisch. */
 sealed interface Abruf<out T> {
-    data class Erfolg<T>(val wert: T, val ausCache: Boolean = false) : Abruf<T>
-    data class Fehler(val meldung: String, val offline: Boolean = false) : Abruf<Nothing>
+    data class Erfolg<T>(val wert: T) : Abruf<T>
+    data class Fehler(val meldung: String) : Abruf<Nothing>
 }
 
+/**
+ * Alle Daten liegen auf dem Gerät — es gibt keinen Server und keine Netzabhängigkeit.
+ *
+ * Die Regeln aus dem ursprünglichen Backend gelten weiter: Preise und Standorte werden
+ * angehängt statt überschrieben, der jüngste Eintrag je Markt ist der aktuelle, und jede
+ * Änderung landet im Verlauf.
+ */
 @Singleton
-class ArtikelRepository @Inject constructor(
-    private val api: ArtikelApi,
-    private val cache: ArtikelCacheDao,
-) {
-    private val json = Json { ignoreUnknownKeys = true }
+class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenbank) {
 
-    /** Zuletzt gesehene Artikel aus dem Cache — die Startseite hat dadurch sofort Inhalt. */
-    fun zuletztGesehen(): Flow<List<Artikel>> =
-        cache.zuletztGesehen().map { liste -> liste.map { it.zuModell() } }
+    private val artikelDao get() = datenbank.artikelDao()
+    private val preisDao get() = datenbank.preisDao()
+    private val standortDao get() = datenbank.standortDao()
+    private val verlaufDao get() = datenbank.verlaufDao()
+    private val stammdatenDao get() = datenbank.stammdatenDao()
+
+    fun zuletztBearbeitet(): Flow<List<Artikel>> =
+        artikelDao.zuletztBearbeitet(STANDARD_MARKT).map { liste -> liste.map { it.zuModell() } }
 
     suspend fun suchen(
         suchbegriff: String?,
         kategorieId: Int? = null,
         nurMitWerbepreis: Boolean = false,
         seite: Int = 1,
-    ): Abruf<List<Artikel>> = try {
-        val antwort = api.suchen(
-            suchbegriff = suchbegriff?.takeIf { it.isNotBlank() },
-            kategorieId = kategorieId,
-            nurMitWerbepreis = nurMitWerbepreis,
-            seite = seite,
+        seitengroesse: Int = 50,
+    ): Abruf<List<Artikel>> {
+        val tokens = Suchtext.normalisieren(suchbegriff)
+            .split(' ')
+            .filter { it.isNotBlank() }
+            .take(3)
+
+        // Die Abfrage erwartet immer drei Muster; nicht belegte sind als '%' neutral.
+        val muster = List(3) { i -> tokens.getOrNull(i)?.let { "%$it%" } ?: "%" }
+        val kategorien = kategorieId?.let { zweigIds(it) } ?: emptyList()
+
+        val treffer = artikelDao.suchen(
+            hatSuche = if (tokens.isEmpty()) 0 else 1,
+            t1 = muster[0], t2 = muster[1], t3 = muster[2],
+            kategorieIds = kategorien,
+            kategorieAnzahl = kategorien.size,
+            nurMitStandort = 0,
+            nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+            jetzt = System.currentTimeMillis(),
+            marktId = STANDARD_MARKT,
+            grenze = seitengroesse,
+            versatz = (seite - 1) * seitengroesse,
         )
-        val artikel = antwort.eintraege.map { it.zuModell() }
-        merken(artikel)
-        Abruf.Erfolg(artikel)
-    } catch (fehler: IOException) {
-        // Kein Netz: der Cache ist besser als ein leerer Bildschirm, muss aber als
-        // möglicherweise veraltet gekennzeichnet sein.
-        val treffer = cache.suchen(suchbegriff.orEmpty()).map { it.zuModell() }
-        if (treffer.isEmpty()) offlineFehler(fehler) else Abruf.Erfolg(treffer, ausCache = true)
-    } catch (fehler: HttpException) {
-        Abruf.Fehler(fehlermeldung(fehler))
+
+        return Abruf.Erfolg(treffer.map { it.zuModell() })
     }
 
-    suspend fun holen(id: String): Abruf<ArtikelDetail> = try {
-        val detail = api.holen(id).zuModell()
-        merken(listOf(detail.artikel))
-        Abruf.Erfolg(detail)
-    } catch (fehler: IOException) {
-        cache.holen(id)?.let { Abruf.Erfolg(ArtikelDetail(it.zuModell()), ausCache = true) }
-            ?: offlineFehler(fehler)
-    } catch (fehler: HttpException) {
-        Abruf.Fehler(fehlermeldung(fehler))
+    suspend fun anzahlTreffer(
+        suchbegriff: String?,
+        kategorieId: Int? = null,
+        nurMitWerbepreis: Boolean = false,
+    ): Int {
+        val tokens = Suchtext.normalisieren(suchbegriff).split(' ').filter { it.isNotBlank() }.take(3)
+        val muster = List(3) { i -> tokens.getOrNull(i)?.let { "%$it%" } ?: "%" }
+        val kategorien = kategorieId?.let { zweigIds(it) } ?: emptyList()
+
+        return artikelDao.anzahlTreffer(
+            hatSuche = if (tokens.isEmpty()) 0 else 1,
+            t1 = muster[0], t2 = muster[1], t3 = muster[2],
+            kategorieIds = kategorien,
+            kategorieAnzahl = kategorien.size,
+            nurMitStandort = 0,
+            nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+            jetzt = System.currentTimeMillis(),
+            marktId = STANDARD_MARKT,
+        )
     }
 
-    /**
-     * Barcode-Lookup. `null` im Erfolgsfall heißt "Artikel unbekannt" — dann bietet die
-     * App das Anlegen an, statt einen Fehler zu zeigen.
-     */
-    suspend fun perEan(ean: String): Abruf<ArtikelDetail?> = try {
-        val antwort = api.perEan(ean)
-        when {
-            antwort.isSuccessful -> {
-                val detail = antwort.body()?.zuModell()
-                detail?.let { merken(listOf(it.artikel)) }
-                Abruf.Erfolg(detail)
-            }
-            antwort.code() == 404 -> Abruf.Erfolg(null)
-            else -> Abruf.Fehler("Die Suche nach $ean ist fehlgeschlagen (${antwort.code()}).")
+    suspend fun holen(id: String): Abruf<ArtikelDetail> {
+        val artikel = artikelDao.holen(id, STANDARD_MARKT)
+            ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+
+        return Abruf.Erfolg(
+            ArtikelDetail(
+                artikel = artikel.zuModell(),
+                preise = preisDao.fuerArtikel(id).map { it.zuModell() },
+                standorte = standortDao.fuerArtikel(id).map { it.zuModell() },
+                erstelltVon = artikel.artikel.erstelltVon,
+            )
+        )
+    }
+
+    /** Barcode-Lookup. `null` heißt "unbekannt" — die App bietet dann das Anlegen an. */
+    suspend fun perEan(ean: String): Abruf<ArtikelDetail?> {
+        val normalisiert = Ean.normalisieren(ean) ?: return Abruf.Erfolg(null)
+        val treffer = artikelDao.perEan(normalisiert, STANDARD_MARKT) ?: return Abruf.Erfolg(null)
+        return holen(treffer.artikel.id) as Abruf<ArtikelDetail?>
+    }
+
+    suspend fun anlegen(
+        name: String,
+        marke: String? = null,
+        ean: String? = null,
+        artikelnummer: String? = null,
+        kategorieId: Int? = null,
+        preis: Double? = null,
+        werbepreis: Double? = null,
+        gang: String? = null,
+        regalBeschreibung: String? = null,
+        erfasstVon: String? = null,
+    ): Abruf<ArtikelDetail> {
+        val normalisierteEan = Ean.normalisieren(ean)
+
+        if (normalisierteEan != null && artikelDao.idPerEan(normalisierteEan) != null) {
+            return Abruf.Fehler(
+                "Zur EAN $normalisierteEan gibt es bereits einen Artikel. Ergänze ihn, " +
+                    "statt einen zweiten anzulegen."
+            )
         }
-    } catch (fehler: IOException) {
-        cache.perEan(ean)?.let { Abruf.Erfolg(ArtikelDetail(it.zuModell()), ausCache = true) }
-            ?: offlineFehler(fehler)
-    } catch (fehler: HttpException) {
-        Abruf.Fehler(fehlermeldung(fehler))
-    }
-
-    suspend fun anlegen(eingabe: ArtikelAnlegenDto): Abruf<ArtikelDetail> =
-        schreibend { api.anlegen(eingabe).zuModell().also { merken(listOf(it.artikel)) } }
-
-    suspend fun aendern(id: String, eingabe: ArtikelAendernDto, geaendertVon: String?): Abruf<ArtikelDetail> =
-        schreibend { api.aendern(id, eingabe, geaendertVon).zuModell().also { merken(listOf(it.artikel)) } }
-
-    suspend fun preisErfassen(artikelId: String, eingabe: PreisErfassenDto): Abruf<Preis> =
-        schreibend { api.preisErfassen(artikelId, eingabe).zuModell() }
-
-    suspend fun standortErfassen(artikelId: String, eingabe: StandortErfassenDto): Abruf<Standort> =
-        schreibend { api.standortErfassen(artikelId, eingabe).zuModell() }
-
-    suspend fun verlauf(artikelId: String): Abruf<List<Verlaufseintrag>> =
-        lesend { api.verlauf(artikelId).map { it.zuModell() } }
-
-    suspend fun kategorien(): Abruf<List<Kategorie>> =
-        lesend { api.kategorien().map { it.zuModell() } }
-
-    suspend fun gaenge(marktId: Int): Abruf<List<Gang>> =
-        lesend { api.gaenge(marktId).map { it.zuModell() } }
-
-    suspend fun artikelImGang(marktId: Int, gang: String): Abruf<List<Artikel>> =
-        lesend { api.artikelImGang(marktId, gang).map { it.zuModell() }.also { merken(it) } }
-
-    suspend fun standardMarkt(): Abruf<Markt> = lesend { api.standardMarkt().zuModell() }
-
-    private suspend fun <T> lesend(block: suspend () -> T): Abruf<T> = try {
-        Abruf.Erfolg(block())
-    } catch (fehler: IOException) {
-        offlineFehler(fehler)
-    } catch (fehler: HttpException) {
-        Abruf.Fehler(fehlermeldung(fehler))
-    }
-
-    /**
-     * Schreibvorgänge brauchen Netz. Ein stiller lokaler Fallback wäre hier falsch: der
-     * Nutzer muss wissen, ob sein Preis angekommen ist.
-     */
-    private suspend fun <T> schreibend(block: suspend () -> T): Abruf<T> = try {
-        Abruf.Erfolg(block())
-    } catch (fehler: IOException) {
-        Abruf.Fehler(
-            "Keine Verbindung zum Server — die Eingabe wurde nicht gespeichert.",
-            offline = true,
-        )
-    } catch (fehler: HttpException) {
-        Abruf.Fehler(fehlermeldung(fehler))
-    }
-
-    private suspend fun merken(artikel: List<Artikel>) {
-        if (artikel.isEmpty()) return
 
         val jetzt = System.currentTimeMillis()
-        cache.merken(artikel.map { it.zuCacheEintrag(jetzt) })
-        cache.aufraeumen()
+        val id = UUID.randomUUID().toString()
+
+        artikelDao.einfuegen(
+            ArtikelEintrag(
+                id = id,
+                name = name.trim(),
+                suchtext = Suchtext.fuerIndex(listOfNotNull(name.trim(), marke?.trim()).joinToString(" ")),
+                marke = marke.leerAlsNull(),
+                ean = normalisierteEan,
+                artikelnummer = artikelnummer.leerAlsNull(),
+                kategorieId = kategorieId,
+                bildUrl = null,
+                erstelltVon = QUELLE_NUTZER,
+                erstelltAm = jetzt,
+                geaendertAm = null,
+            )
+        )
+
+        protokollieren(id, "Artikel", "Angelegt", "Artikel \"${name.trim()}\" angelegt.", erfasstVon, jetzt)
+
+        preis?.let { preisErfassenIntern(id, it, werbepreis, null, erfasstVon, jetzt) }
+        gang.leerAlsNull()?.let { standortErfassenIntern(id, it, regalBeschreibung, erfasstVon, jetzt) }
+
+        return holen(id)
     }
 
-    private fun offlineFehler(fehler: IOException): Abruf.Fehler = Abruf.Fehler(
-        meldung = "Keine Verbindung zum Server (${fehler.message ?: "Netzwerkfehler"}).",
-        offline = true,
+    suspend fun aendern(
+        id: String,
+        name: String,
+        marke: String? = null,
+        ean: String? = null,
+        artikelnummer: String? = null,
+        kategorieId: Int? = null,
+        geaendertVon: String? = null,
+    ): Abruf<ArtikelDetail> {
+        val vorhanden = artikelDao.roh(id) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+        val normalisierteEan = Ean.normalisieren(ean)
+
+        if (normalisierteEan != null) {
+            val andere = artikelDao.idPerEan(normalisierteEan)
+            if (andere != null && andere != id) {
+                return Abruf.Fehler("Die EAN $normalisierteEan gehört bereits zu einem anderen Artikel.")
+            }
+        }
+
+        val aenderungen = buildList {
+            vergleichen(this, "Name", vorhanden.name, name.trim())
+            vergleichen(this, "Marke", vorhanden.marke, marke.leerAlsNull())
+            vergleichen(this, "EAN", vorhanden.ean, normalisierteEan)
+            vergleichen(this, "Artikelnummer", vorhanden.artikelnummer, artikelnummer.leerAlsNull())
+            vergleichen(this, "Kategorie", vorhanden.kategorieId?.toString(), kategorieId?.toString())
+        }
+
+        if (aenderungen.isEmpty()) return holen(id)
+
+        val jetzt = System.currentTimeMillis()
+        artikelDao.aktualisieren(
+            vorhanden.copy(
+                name = name.trim(),
+                suchtext = Suchtext.fuerIndex(listOfNotNull(name.trim(), marke?.trim()).joinToString(" ")),
+                marke = marke.leerAlsNull(),
+                ean = normalisierteEan,
+                artikelnummer = artikelnummer.leerAlsNull(),
+                kategorieId = kategorieId,
+                geaendertAm = jetzt,
+            )
+        )
+
+        protokollieren(id, "Artikel", "Geaendert", aenderungen.joinToString("; "), geaendertVon, jetzt)
+        return holen(id)
+    }
+
+    suspend fun loeschen(id: String): Abruf<Unit> {
+        artikelDao.roh(id) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+        artikelDao.loeschen(id)
+        return Abruf.Erfolg(Unit)
+    }
+
+    suspend fun preisErfassen(
+        artikelId: String,
+        preis: Double,
+        werbepreis: Double? = null,
+        werbepreisBis: Long? = null,
+        erfasstVon: String? = null,
+    ): Abruf<Preis> {
+        artikelDao.roh(artikelId) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+
+        if (werbepreis != null && werbepreis > preis) {
+            return Abruf.Fehler("Der Werbepreis darf nicht über dem Normalpreis liegen.")
+        }
+
+        val eintrag = preisErfassenIntern(
+            artikelId, preis, werbepreis, werbepreisBis, erfasstVon, System.currentTimeMillis()
+        )
+        return Abruf.Erfolg(eintrag.zuModell())
+    }
+
+    suspend fun standortErfassen(
+        artikelId: String,
+        gang: String,
+        regalBeschreibung: String? = null,
+        erfasstVon: String? = null,
+    ): Abruf<Standort> {
+        artikelDao.roh(artikelId) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+
+        val eintrag = standortErfassenIntern(
+            artikelId, gang, regalBeschreibung, erfasstVon, System.currentTimeMillis()
+        )
+        return Abruf.Erfolg(eintrag.zuModell())
+    }
+
+    suspend fun verlauf(artikelId: String): Abruf<List<Verlaufseintrag>> =
+        Abruf.Erfolg(
+            verlaufDao.fuerArtikel(artikelId).map {
+                Verlaufseintrag(it.id, it.entitaet, it.beschreibung, it.geaendertVon, it.geaendertAm)
+            }
+        )
+
+    suspend fun kategorien(): Abruf<List<Kategorie>> {
+        val alle = stammdatenDao.kategorien()
+        val nachId = alle.associateBy { it.id }
+
+        return Abruf.Erfolg(
+            alle.map { k ->
+                val pfad = generateSequence(k) { nachId[it.parentId] }
+                    .map { it.name }
+                    .toList()
+                    .reversed()
+                    .joinToString(" > ")
+
+                Kategorie(k.id, k.name, pfad)
+            }.sortedBy { it.pfad.lowercase(Locale.GERMANY) }
+        )
+    }
+
+    suspend fun gaenge(): Abruf<List<Gang>> {
+        val zeilen = artikelDao.gaenge(STANDARD_MARKT)
+
+        return Abruf.Erfolg(
+            zeilen
+                .map { Gang(it.gang, it.anzahl) }
+                // "2" vor "10": numerische Gänge nicht alphabetisch sortieren.
+                .sortedWith(compareBy({ it.gang.toIntOrNull() ?: Int.MAX_VALUE }, { it.gang }))
+        )
+    }
+
+    suspend fun artikelImGang(gang: String): Abruf<List<Artikel>> =
+        Abruf.Erfolg(artikelDao.imGang(gang, STANDARD_MARKT).map { it.zuModell() })
+
+    suspend fun markt(): Abruf<Markt> {
+        val markt = stammdatenDao.maerkte().firstOrNull()
+            ?: return Abruf.Fehler("Es ist kein Markt angelegt.")
+
+        return Abruf.Erfolg(Markt(markt.id, markt.name, markt.ort))
+    }
+
+    private suspend fun preisErfassenIntern(
+        artikelId: String,
+        preis: Double,
+        werbepreis: Double?,
+        werbepreisBis: Long?,
+        erfasstVon: String?,
+        jetzt: Long,
+    ): PreisEintrag {
+        val vorheriger = preisDao.aktuellster(artikelId, STANDARD_MARKT)
+
+        val eintrag = PreisEintrag(
+            id = UUID.randomUUID().toString(),
+            artikelId = artikelId,
+            marktId = STANDARD_MARKT,
+            wert = preis,
+            werbepreis = werbepreis,
+            werbepreisVon = null,
+            werbepreisBis = werbepreisBis,
+            erfasstAm = jetzt,
+            erfasstVon = erfasstVon.leerAlsNull(),
+        )
+
+        preisDao.einfuegen(eintrag)
+
+        val beschreibung = buildString {
+            if (vorheriger == null) {
+                append(String.format(Locale.GERMANY, "Preis %.2f EUR erfasst", preis))
+            } else {
+                append(String.format(Locale.GERMANY, "Preis %.2f -> %.2f EUR", vorheriger.wert, preis))
+            }
+            werbepreis?.let { append(String.format(Locale.GERMANY, ", Werbepreis %.2f EUR", it)) }
+        }
+
+        protokollieren(artikelId, "Preis", "Angelegt", beschreibung, erfasstVon, jetzt)
+        return eintrag
+    }
+
+    private suspend fun standortErfassenIntern(
+        artikelId: String,
+        gang: String,
+        regalBeschreibung: String?,
+        erfasstVon: String?,
+        jetzt: Long,
+    ): StandortEintrag {
+        val eintrag = StandortEintrag(
+            id = UUID.randomUUID().toString(),
+            artikelId = artikelId,
+            marktId = STANDARD_MARKT,
+            gang = gang.trim(),
+            regalBeschreibung = regalBeschreibung.leerAlsNull(),
+            kartenX = null,
+            kartenY = null,
+            erfasstAm = jetzt,
+            erfasstVon = erfasstVon.leerAlsNull(),
+        )
+
+        standortDao.einfuegen(eintrag)
+
+        val beschreibung = regalBeschreibung.leerAlsNull()
+            ?.let { "Standort Gang ${gang.trim()} ($it)" }
+            ?: "Standort Gang ${gang.trim()}"
+
+        protokollieren(artikelId, "Standort", "Angelegt", beschreibung, erfasstVon, jetzt)
+        return eintrag
+    }
+
+    private suspend fun protokollieren(
+        artikelId: String,
+        entitaet: String,
+        art: String,
+        beschreibung: String,
+        von: String?,
+        jetzt: Long,
+    ) = verlaufDao.einfuegen(
+        VerlaufEintrag(
+            artikelId = artikelId,
+            entitaet = entitaet,
+            aenderungsart = art,
+            beschreibung = beschreibung.take(500),
+            geaendertVon = von.leerAlsNull(),
+            geaendertAm = jetzt,
+        )
     )
 
-    /**
-     * Holt die Klartextmeldung aus den Problem Details der API. Die sind auf Deutsch und
-     * erklären dem Nutzer den Fall genauer als ein Statuscode ("EAN gehört bereits zu
-     * einem anderen Artikel").
-     */
-    private fun fehlermeldung(fehler: HttpException): String {
-        val rumpf = runCatching { fehler.response()?.errorBody()?.string() }.getOrNull()
-        val detail = rumpf
-            ?.takeIf { it.isNotBlank() }
-            ?.let { runCatching { json.decodeFromString<ProblemDetailsDto>(it) }.getOrNull() }
-            ?.detail
+    /** Die Kategorie selbst plus alle Unterkategorien. */
+    private suspend fun zweigIds(wurzelId: Int): List<Int> {
+        val alle = stammdatenDao.kategorien()
+        val kinder = alle.filter { it.parentId != null }.groupBy({ it.parentId!! }, { it.id })
 
-        return detail ?: "Die Anfrage ist fehlgeschlagen (HTTP ${fehler.code()})."
+        val ergebnis = mutableListOf<Int>()
+        val offen = ArrayDeque(listOf(wurzelId))
+        val gesehen = mutableSetOf<Int>()
+
+        while (offen.isNotEmpty()) {
+            val aktuell = offen.removeFirst()
+            if (!gesehen.add(aktuell)) continue
+            ergebnis += aktuell
+            kinder[aktuell]?.let { offen.addAll(it) }
+        }
+
+        return ergebnis
     }
+
+    private fun vergleichen(ziel: MutableList<String>, feld: String, alt: String?, neu: String?) {
+        if (alt != neu) ziel += "$feld: ${alt ?: "—"} -> ${neu ?: "—"}"
+    }
+
+    private fun String?.leerAlsNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 }
+
+// --- Zuordnung Datenbank -> UI-Modell ---
+
+private fun ArtikelMitStand.zuModell(): Artikel {
+    val jetzt = System.currentTimeMillis()
+    val aktiv = werbepreis != null &&
+        (werbepreisVon == null || werbepreisVon <= jetzt) &&
+        (werbepreisBis == null || werbepreisBis >= jetzt)
+
+    return Artikel(
+        id = artikel.id,
+        name = artikel.name,
+        marke = artikel.marke,
+        ean = artikel.ean,
+        artikelnummer = artikel.artikelnummer,
+        kategorieId = artikel.kategorieId,
+        kategorieName = kategorieName,
+        bildUrl = artikel.bildUrl,
+        preis = preisWert?.let {
+            Preis(preis = it, werbepreis = werbepreis, werbepreisAktiv = aktiv, werbepreisGueltigBis = werbepreisBis)
+        },
+        standort = gang?.let { Standort(gang = it, regalBeschreibung = regalBeschreibung) },
+    )
+}
+
+private fun PreisEintrag.zuModell(): Preis {
+    val jetzt = System.currentTimeMillis()
+    val aktiv = werbepreis != null &&
+        (werbepreisVon == null || werbepreisVon <= jetzt) &&
+        (werbepreisBis == null || werbepreisBis >= jetzt)
+
+    return Preis(
+        id = id,
+        preis = wert,
+        werbepreis = werbepreis,
+        werbepreisAktiv = aktiv,
+        werbepreisGueltigVon = werbepreisVon,
+        werbepreisGueltigBis = werbepreisBis,
+        erfasstAm = erfasstAm,
+        erfasstVon = erfasstVon,
+    )
+}
+
+private fun StandortEintrag.zuModell() = Standort(
+    id = id,
+    gang = gang,
+    regalBeschreibung = regalBeschreibung,
+    kartenX = kartenX,
+    kartenY = kartenY,
+    erfasstAm = erfasstAm,
+    erfasstVon = erfasstVon,
+)

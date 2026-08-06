@@ -7,10 +7,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.artikelfinder.app.data.Abruf
 import de.artikelfinder.app.data.ArtikelRepository
 import de.artikelfinder.app.data.Kategorie
-import de.artikelfinder.app.data.remote.ArtikelAendernDto
-import de.artikelfinder.app.data.remote.ArtikelAnlegenDto
-import de.artikelfinder.app.data.remote.PreisErfassenDto
-import de.artikelfinder.app.data.remote.StandortErfassenDto
 import de.artikelfinder.app.ui.navigation.Ziele
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -107,41 +103,28 @@ class BearbeitenViewModel @Inject constructor(
 
             val ergebnis = if (artikelId == null) {
                 repository.anlegen(
-                    ArtikelAnlegenDto(
-                        name = aktuell.name.trim(),
-                        marke = aktuell.marke.leerAlsNull(),
-                        ean = aktuell.ean.leerAlsNull(),
-                        artikelnummer = aktuell.artikelnummer.leerAlsNull(),
-                        kategorieId = aktuell.kategorieId,
-                        // Preis und Standort gleich mitschicken: beim Anlegen im Markt
-                        // stehen beide Angaben ohnehin gerade vor einem.
-                        preis = aktuell.preis.alsBetrag()?.let {
-                            PreisErfassenDto(
-                                preis = it,
-                                werbepreis = aktuell.werbepreis.alsBetrag(),
-                                erfasstVon = aktuell.erfasstVon.leerAlsNull(),
-                            )
-                        },
-                        standort = aktuell.gang.leerAlsNull()?.let {
-                            StandortErfassenDto(
-                                gang = it,
-                                regalBeschreibung = aktuell.regalBeschreibung.leerAlsNull(),
-                                erfasstVon = aktuell.erfasstVon.leerAlsNull(),
-                            )
-                        },
-                    )
+                    name = aktuell.name,
+                    marke = aktuell.marke,
+                    ean = aktuell.ean,
+                    artikelnummer = aktuell.artikelnummer,
+                    kategorieId = aktuell.kategorieId,
+                    // Preis und Standort gleich mitschicken: beim Anlegen im Markt stehen
+                    // beide Angaben ohnehin gerade vor einem.
+                    preis = aktuell.preis.alsBetrag(),
+                    werbepreis = aktuell.werbepreis.alsBetrag(),
+                    gang = aktuell.gang,
+                    regalBeschreibung = aktuell.regalBeschreibung,
+                    erfasstVon = aktuell.erfasstVon,
                 )
             } else {
                 repository.aendern(
-                    artikelId,
-                    ArtikelAendernDto(
-                        name = aktuell.name.trim(),
-                        marke = aktuell.marke.leerAlsNull(),
-                        ean = aktuell.ean.leerAlsNull(),
-                        artikelnummer = aktuell.artikelnummer.leerAlsNull(),
-                        kategorieId = aktuell.kategorieId,
-                    ),
-                    geaendertVon = aktuell.erfasstVon.leerAlsNull(),
+                    id = artikelId,
+                    name = aktuell.name,
+                    marke = aktuell.marke,
+                    ean = aktuell.ean,
+                    artikelnummer = aktuell.artikelnummer,
+                    kategorieId = aktuell.kategorieId,
+                    geaendertVon = aktuell.erfasstVon,
                 )
             }
 
@@ -159,7 +142,6 @@ class BearbeitenViewModel @Inject constructor(
     }
 }
 
-private fun String.leerAlsNull(): String? = trim().takeIf { it.isNotEmpty() }
-
+/** Akzeptiert Komma und Punkt — auf der deutschen Tastatur liegt das Komma näher. */
 private fun String.alsBetrag(): Double? =
     trim().replace(',', '.').takeIf { it.isNotBlank() }?.toDoubleOrNull()?.takeIf { it > 0 }

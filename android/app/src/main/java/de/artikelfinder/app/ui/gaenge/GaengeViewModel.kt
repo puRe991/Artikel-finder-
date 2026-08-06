@@ -44,11 +44,11 @@ class GaengeViewModel @Inject constructor(
         viewModelScope.launch {
             _zustand.value = _zustand.value.copy(laedt = true, fehler = null)
 
-            when (val markt = repository.standardMarkt()) {
+            when (val markt = repository.markt()) {
                 is Abruf.Erfolg -> {
                     _zustand.value = _zustand.value.copy(markt = markt.wert)
 
-                    _zustand.value = when (val gaenge = repository.gaenge(markt.wert.id)) {
+                    _zustand.value = when (val gaenge = repository.gaenge()) {
                         is Abruf.Erfolg -> _zustand.value.copy(gaenge = gaenge.wert, laedt = false)
                         is Abruf.Fehler -> _zustand.value.copy(laedt = false, fehler = gaenge.meldung)
                     }
@@ -86,7 +86,7 @@ class GangArtikelViewModel @Inject constructor(
         viewModelScope.launch {
             _zustand.value = _zustand.value.copy(laedt = true, fehler = null)
 
-            val markt = repository.standardMarkt()
+            val markt = repository.markt()
             if (markt !is Abruf.Erfolg) {
                 _zustand.value = _zustand.value.copy(
                     laedt = false,
@@ -95,7 +95,7 @@ class GangArtikelViewModel @Inject constructor(
                 return@launch
             }
 
-            _zustand.value = when (val artikel = repository.artikelImGang(markt.wert.id, gang)) {
+            _zustand.value = when (val artikel = repository.artikelImGang(gang)) {
                 is Abruf.Erfolg -> _zustand.value.copy(artikel = artikel.wert, laedt = false)
                 is Abruf.Fehler -> _zustand.value.copy(laedt = false, fehler = artikel.meldung)
             }

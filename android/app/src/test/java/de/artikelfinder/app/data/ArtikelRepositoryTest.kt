@@ -1,194 +1,237 @@
 package de.artikelfinder.app.data
 
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import de.artikelfinder.app.data.local.ArtikelCacheDao
-import de.artikelfinder.app.data.local.ArtikelCacheEintrag
-import de.artikelfinder.app.data.remote.ArtikelApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import de.artikelfinder.app.data.local.ArtikelDatenbank
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import retrofit2.Retrofit
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+/**
+ * Läuft gegen eine echte SQLite-Datenbank im Speicher. Die interessanten Fehler stecken in
+ * den Abfragen selbst — "jüngster Preis je Markt", LIKE-Verhalten, Kategoriezweige — und
+ * die zeigen sich nur beim echten Datenbanktreiber.
+ */
+@RunWith(RobolectricTestRunner::class)
 class ArtikelRepositoryTest {
 
-    private lateinit var server: MockWebServer
+    private lateinit var datenbank: ArtikelDatenbank
     private lateinit var repository: ArtikelRepository
-    private lateinit var cache: CacheAttrappe
 
     @Before
-    fun aufbauen() {
-        server = MockWebServer()
-        server.start()
+    fun aufbauen() = runTest {
+        datenbank = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            ArtikelDatenbank::class.java,
+        ).allowMainThreadQueries().build()
 
-        val json = Json { ignoreUnknownKeys = true }
-        val api = Retrofit.Builder()
-            .baseUrl(server.url("/"))
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(ArtikelApi::class.java)
+        repository = ArtikelRepository(datenbank)
 
-        cache = CacheAttrappe()
-        repository = ArtikelRepository(api, cache)
+        // Stammdaten wie beim echten Start anlegen.
+        val aufbau = katalogaufbau()
+        aufbau.sicherstellen()
+        val zustand = aufbau.zustand.value
+        check(zustand is Aufbauzustand.Fertig) { "Katalogaufbau fehlgeschlagen: " + zustand }
     }
 
     @After
-    fun abbauen() {
-        server.shutdown()
+    fun abbauen() = datenbank.close()
+
+    @Test
+    fun `Katalog wird beim ersten Start aus den Assets eingelesen`() = runTest {
+        // Prüft die echte mitgelieferte Datei, nicht eine Attrappe.
+        val anzahl = datenbank.artikelDao().anzahl()
+        assertTrue("Erwartet wurden ueber 15.000 Artikel, waren $anzahl", anzahl > 15_000)
     }
 
     @Test
-    fun `EAN-Lookup liefert den Artikel und legt ihn in den Cache`() = runTest {
-        server.enqueue(jsonAntwort(ARTIKEL_JSON))
+    fun `Suche findet Katalogartikel ohne Umlaute`() = runTest {
+        val mitUmlaut = repository.suchen("käse").erfolg()
+        val ohneUmlaut = repository.suchen("kase").erfolg()
+        val ausgeschrieben = repository.suchen("kaese").erfolg()
 
-        val ergebnis = repository.perEan("4008400202990")
-
-        assertTrue(ergebnis is Abruf.Erfolg)
-        val detail = (ergebnis as Abruf.Erfolg).wert
-        assertEquals("Bio Vollmilch", detail?.artikel?.name)
-        assertEquals(1.29, detail?.artikel?.preis?.gueltigerPreis!!, 0.0001)
-
-        // Der gescannte Artikel muss offline verfügbar bleiben.
-        assertEquals(1, cache.gemerkt.size)
-        assertEquals("Bio Vollmilch", cache.gemerkt.single().name)
+        assertTrue(mitUmlaut.isNotEmpty())
+        assertEquals(mitUmlaut.size, ohneUmlaut.size)
+        assertEquals(mitUmlaut.size, ausgeschrieben.size)
     }
 
     @Test
-    fun `Unbekannte EAN ist Erfolg mit null, kein Fehler`() = runTest {
-        // 404 ist beim Scannen der Auslöser für "Artikel anlegen", nicht für eine Fehlermeldung.
-        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"detail":"unbekannt"}"""))
+    fun `Suche verknuepft mehrere Begriffe mit UND`() = runTest {
+        val einer = repository.suchen("bio").erfolg()
+        val zwei = repository.suchen("bio milch").erfolg()
 
-        val ergebnis = repository.perEan("4000000000000")
-
-        assertTrue(ergebnis is Abruf.Erfolg)
-        assertNull((ergebnis as Abruf.Erfolg).wert)
+        assertTrue("Zwei Begriffe duerfen nicht mehr treffen als einer", zwei.size <= einer.size)
+        assertTrue(zwei.all { treffer ->
+            val text = Suchtext.normalisieren("${treffer.name} ${treffer.marke.orEmpty()}")
+            text.contains("bio") && text.contains("milch")
+        })
     }
 
     @Test
-    fun `Konflikt beim Anlegen zeigt die Klartextmeldung der API`() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(409)
-                .setHeader("Content-Type", "application/problem+json")
-                .setBody("""{"title":"Conflict","detail":"Zur EAN 4008400202990 existiert bereits ein Artikel.","status":409}""")
+    fun `Anlegen mit Preis und Standort erzeugt alles in einem Schritt`() = runTest {
+        val detail = repository.anlegen(
+            name = "Testartikel",
+            ean = FREIE_EAN,
+            preis = 1.49,
+            gang = "7",
+            erfasstVon = "tobias",
+        ).erfolg()
+
+        assertEquals(1, detail.preise.size)
+        assertEquals(1, detail.standorte.size)
+        assertEquals("7", detail.standorte.first().gang)
+        assertEquals("Nutzer", detail.erstelltVon)
+    }
+
+    @Test
+    fun `Doppelte EAN wird abgelehnt`() = runTest {
+        repository.anlegen(name = "Erster", ean = FREIE_EAN)
+        val zweiter = repository.anlegen(name = "Zweiter", ean = FREIE_EAN)
+
+        assertTrue(zweiter is Abruf.Fehler)
+    }
+
+    @Test
+    fun `EAN eines Katalogartikels kollidiert ebenfalls`() = runTest {
+        // Der Katalog bringt bereits 15.000 EANs mit — eine davon darf nicht doppelt gehen.
+        val vorhandene = datenbank.artikelDao()
+            .suchen(0, "%", "%", "%", emptyList(), 0, 0, 0, 0, 1, 1, 0)
+            .first().artikel.ean!!
+
+        val ergebnis = repository.anlegen(name = "Dublette", ean = vorhandene)
+        assertTrue(ergebnis is Abruf.Fehler)
+    }
+
+    @Test
+    fun `Juengster Preis gewinnt`() = runTest {
+        val artikel = repository.anlegen(name = "Vollmilch", preis = 1.49).erfolg()
+        repository.preisErfassen(artikel.artikel.id, 1.59)
+
+        val neu = repository.holen(artikel.artikel.id).erfolg()
+
+        assertEquals(1.59, neu.artikel.preis!!.preis, 0.001)
+        assertEquals("Historie bleibt erhalten", 2, neu.preise.size)
+    }
+
+    @Test
+    fun `Werbepreis gilt nur bis zum Ablaufdatum`() = runTest {
+        val artikel = repository.anlegen(name = "Angebotsartikel").erfolg()
+
+        repository.preisErfassen(
+            artikel.artikel.id, preis = 1.49, werbepreis = 1.29,
+            werbepreisBis = System.currentTimeMillis() + 86_400_000,
         )
+        assertEquals(1.29, repository.holen(artikel.artikel.id).erfolg().artikel.preis!!.gueltigerPreis, 0.001)
 
-        val ergebnis = repository.anlegen(
-            de.artikelfinder.app.data.remote.ArtikelAnlegenDto(name = "Dublette", ean = "4008400202990")
+        repository.preisErfassen(
+            artikel.artikel.id, preis = 1.49, werbepreis = 1.29,
+            werbepreisBis = System.currentTimeMillis() - 1,
         )
+        assertEquals(1.49, repository.holen(artikel.artikel.id).erfolg().artikel.preis!!.gueltigerPreis, 0.001)
+    }
+
+    @Test
+    fun `Werbepreis ueber Normalpreis wird abgelehnt`() = runTest {
+        val artikel = repository.anlegen(name = "Artikel").erfolg()
+        val ergebnis = repository.preisErfassen(artikel.artikel.id, preis = 1.00, werbepreis = 2.00)
 
         assertTrue(ergebnis is Abruf.Fehler)
-        assertEquals(
-            "Zur EAN 4008400202990 existiert bereits ein Artikel.",
-            (ergebnis as Abruf.Fehler).meldung,
-        )
     }
 
     @Test
-    fun `Suche faellt bei Netzfehler auf den Cache zurueck`() = runTest {
-        server.shutdown() // simuliert "kein Netz"
-        cache.eintraege += cacheEintrag("Vollmilch")
+    fun `Umraeumen entfernt den Artikel aus dem alten Gang`() = runTest {
+        val artikel = repository.anlegen(name = "Vollmilch", gang = "7").erfolg()
+        repository.standortErfassen(artikel.artikel.id, gang = "3")
 
-        val ergebnis = repository.suchen("voll")
-
-        assertTrue(ergebnis is Abruf.Erfolg)
-        val erfolg = ergebnis as Abruf.Erfolg
-        assertTrue("Cache-Treffer müssen als solche gekennzeichnet sein", erfolg.ausCache)
-        assertEquals("Vollmilch", erfolg.wert.single().name)
+        assertTrue(repository.artikelImGang("7").erfolg().isEmpty())
+        assertEquals(1, repository.artikelImGang("3").erfolg().size)
+        assertEquals(listOf("3"), repository.gaenge().erfolg().map { it.gang })
     }
 
     @Test
-    fun `Leerer Cache bei Netzfehler meldet offline`() = runTest {
-        server.shutdown()
+    fun `Gaenge werden numerisch sortiert`() = runTest {
+        repository.anlegen(name = "A", gang = "2")
+        repository.anlegen(name = "B", gang = "10")
+        repository.anlegen(name = "C", gang = "1")
 
-        val ergebnis = repository.suchen("voll")
-
-        assertTrue(ergebnis is Abruf.Fehler)
-        assertTrue((ergebnis as Abruf.Fehler).offline)
+        assertEquals(listOf("1", "2", "10"), repository.gaenge().erfolg().map { it.gang })
     }
 
     @Test
-    fun `Schreibvorgang ohne Netz wird nicht still verschluckt`() = runTest {
-        server.shutdown()
+    fun `Verlauf protokolliert wer was wann geaendert hat`() = runTest {
+        val artikel = repository.anlegen(name = "Vollmilch", preis = 1.49, erfasstVon = "tobias").erfolg()
+        repository.preisErfassen(artikel.artikel.id, 1.59, erfasstVon = "tobias")
 
-        val ergebnis = repository.preisErfassen(
-            "1",
-            de.artikelfinder.app.data.remote.PreisErfassenDto(preis = 1.49),
-        )
+        val verlauf = repository.verlauf(artikel.artikel.id).erfolg()
 
-        // Der Nutzer muss erfahren, dass der Preis nicht angekommen ist.
-        assertTrue(ergebnis is Abruf.Fehler)
-        assertTrue((ergebnis as Abruf.Fehler).offline)
-        assertTrue(ergebnis.meldung.contains("nicht gespeichert"))
+        assertEquals(3, verlauf.size) // Artikel + Erstpreis + neuer Preis
+        assertEquals("Preis 1,49 -> 1,59 EUR", verlauf.first().beschreibung)
+        assertTrue(verlauf.all { it.geaendertVon == "tobias" })
     }
 
-    private fun jsonAntwort(rumpf: String) = MockResponse()
-        .setHeader("Content-Type", "application/json")
-        .setBody(rumpf)
+    @Test
+    fun `Kategoriefilter schliesst Unterkategorien ein`() = runTest {
+        val kategorien = repository.kategorien().erfolg()
+        val molkerei = kategorien.first { it.name == "Molkereiprodukte" }
+        val milch = kategorien.first { it.name == "Milch" }
 
-    private fun cacheEintrag(name: String) = ArtikelCacheEintrag(
-        id = "1", name = name, marke = null, ean = null, kategorieName = null, bildUrl = null,
-        preis = 1.49, werbepreis = null, werbepreisAktiv = false, gang = "7",
-        regalBeschreibung = null, zuletztGesehen = 0,
-    )
+        repository.anlegen(name = "Testmilch", kategorieId = milch.id)
 
-    /** Einfache Attrappe statt Room — hier wird das Repository getestet, nicht die Datenbank. */
-    private class CacheAttrappe : ArtikelCacheDao {
-        val eintraege = mutableListOf<ArtikelCacheEintrag>()
-        val gemerkt = mutableListOf<ArtikelCacheEintrag>()
+        val treffer = repository.suchen("testmilch", kategorieId = molkerei.id).erfolg()
+        assertEquals(1, treffer.size)
+    }
 
-        override fun zuletztGesehen(limit: Int): Flow<List<ArtikelCacheEintrag>> = flowOf(eintraege)
+    @Test
+    fun `EAN-Lookup findet Artikel unabhaengig von der Schreibweise`() = runTest {
+        repository.anlegen(name = "Vollmilch", ean = FREIE_EAN)
 
-        override suspend fun suchen(begriff: String, limit: Int): List<ArtikelCacheEintrag> =
-            eintraege.filter { it.name.contains(begriff, ignoreCase = true) }
+        assertNotNull(repository.perEan("9999-999-999994").erfolg())
+        assertNull(repository.perEan("4000000000000").erfolg())
+    }
 
-        override suspend fun holen(id: String): ArtikelCacheEintrag? = eintraege.find { it.id == id }
+    @Test
+    fun `Loeschen raeumt Preise Standorte und Verlauf mit ab`() = runTest {
+        val artikel = repository.anlegen(name = "Weg damit", preis = 1.49, gang = "7").erfolg()
+        val id = artikel.artikel.id
 
-        override suspend fun perEan(ean: String): ArtikelCacheEintrag? = eintraege.find { it.ean == ean }
+        repository.loeschen(id)
 
-        override suspend fun merken(eintraege: List<ArtikelCacheEintrag>) {
-            gemerkt += eintraege
-        }
+        assertTrue(repository.holen(id) is Abruf.Fehler)
+        assertTrue(datenbank.preisDao().fuerArtikel(id).isEmpty())
+        assertTrue(datenbank.standortDao().fuerArtikel(id).isEmpty())
+        assertTrue(datenbank.verlaufDao().fuerArtikel(id).isEmpty())
+    }
 
-        override suspend fun aufraeumen(behalten: Int) = Unit
+    @Test
+    fun `Zweiter Start liest den Katalog nicht erneut ein`() = runTest {
+        val vorher = datenbank.artikelDao().anzahl()
+        katalogaufbau().sicherstellen()
+
+        assertEquals(vorher, datenbank.artikelDao().anzahl())
     }
 
     private companion object {
-        const val ARTIKEL_JSON = """
-        {
-          "id": "11111111-1111-1111-1111-111111111111",
-          "name": "Bio Vollmilch",
-          "marke": "Müller",
-          "ean": "4008400202990",
-          "erstelltVon": "Nutzer",
-          "erstelltAm": "2026-08-06T10:00:00+00:00",
-          "preise": [{
-            "id": "22222222-2222-2222-2222-222222222222",
-            "artikelId": "11111111-1111-1111-1111-111111111111",
-            "marktId": 1,
-            "preis": 1.49,
-            "werbepreis": 1.29,
-            "erfasstAm": "2026-08-06T10:00:00+00:00",
-            "werbepreisAktiv": true,
-            "gueltigerPreis": 1.29
-          }],
-          "standorte": [{
-            "id": "33333333-3333-3333-3333-333333333333",
-            "artikelId": "11111111-1111-1111-1111-111111111111",
-            "marktId": 1,
-            "gang": "7",
-            "erfasstAm": "2026-08-06T10:00:00+00:00"
-          }]
-        }
-        """
+        /** Nicht im ausgelieferten Katalog enthalten — sonst kollidieren die Tests mit echten Daten. */
+        const val FREIE_EAN = "9999999999994"
+    }
+
+    /**
+     * Bewusst ueber den echten Asset-Manager statt ueber den Quellbaum: der Build-Prozess
+     * veraendert Assets (er entpackt .gz und schneidet die Endung ab), und genau dieser
+     * Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
+     */
+    private fun katalogaufbau() =
+        Katalogaufbau(ApplicationProvider.getApplicationContext(), datenbank)
+
+    private fun <T> Abruf<T>.erfolg(): T = when (this) {
+        is Abruf.Erfolg -> wert
+        is Abruf.Fehler -> throw AssertionError("Erwartet wurde ein Erfolg, war: $meldung")
     }
 }

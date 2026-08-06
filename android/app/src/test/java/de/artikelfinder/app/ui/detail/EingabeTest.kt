@@ -3,6 +3,8 @@ package de.artikelfinder.app.ui.detail
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.LocalDate
+import java.time.ZoneId
 
 class EingabeTest {
 
@@ -24,16 +26,22 @@ class EingabeTest {
 
     @Test
     fun `Aktionsdatum gilt bis zum Ende des Tages`() {
-        val ergebnis = "31.12.2026".alsIsoDatum()
+        val ergebnis = "31.12.2026".alsTagesende()!!
 
         // Ohne die Uhrzeit wäre eine Aktion am letzten Tag bereits um 00 Uhr abgelaufen.
-        assertEquals("2026-12-31T23:59:59Z", ergebnis)
+        val erwartet = LocalDate.of(2026, 12, 31)
+            .atTime(23, 59, 59)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        assertEquals(erwartet, ergebnis)
     }
 
     @Test
     fun `Aktionsdatum lehnt unvollstaendige Eingaben ab`() {
-        assertNull("31.12".alsIsoDatum())
-        assertNull("2026-12-31".alsIsoDatum())
-        assertNull("".alsIsoDatum())
+        assertNull("31.12".alsTagesende())
+        assertNull("2026-12-31".alsTagesende())
+        assertNull("".alsTagesende())
     }
 }

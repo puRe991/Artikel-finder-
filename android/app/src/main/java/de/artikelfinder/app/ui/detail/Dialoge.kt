@@ -17,7 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
@@ -27,7 +27,7 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun PreisDialog(
     beiAbbrechen: () -> Unit,
-    beiSpeichern: (preis: Double, werbepreis: Double?, gueltigBis: String?, erfasstVon: String?) -> Unit,
+    beiSpeichern: (preis: Double, werbepreis: Double?, gueltigBis: Long?, erfasstVon: String?) -> Unit,
 ) {
     var preisText by remember { mutableStateOf("") }
     var werbepreisText by remember { mutableStateOf("") }
@@ -36,7 +36,7 @@ fun PreisDialog(
 
     val preis = preisText.alsBetrag()
     val werbepreis = werbepreisText.alsBetrag()
-    val gueltigBis = gueltigBisText.alsIsoDatum()
+    val gueltigBis = gueltigBisText.alsTagesende()
 
     val fehler = when {
         preisText.isNotBlank() && preis == null -> "Preis konnte nicht gelesen werden."
@@ -157,12 +157,13 @@ fun String.alsBetrag(): Double? = trim()
     ?.takeIf { it > 0 }
 
 /**
- * Wandelt "31.12.2026" in den ISO-Zeitstempel um, den die API erwartet. Als Ende des Tages,
- * damit eine Aktion am angegebenen Datum noch gilt.
+ * Wandelt "31.12.2026" in Millisekunden seit 1970 um — als Ende des Tages in der
+ * Zeitzone des Geräts, damit eine Aktion am angegebenen Datum noch gilt.
  */
-fun String.alsIsoDatum(): String? = runCatching {
+fun String.alsTagesende(): Long? = runCatching {
     LocalDate.parse(trim(), DateTimeFormatter.ofPattern("dd.MM.yyyy"))
         .atTime(23, 59, 59)
-        .atOffset(ZoneOffset.UTC)
-        .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        .atZone(ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
 }.getOrNull()
