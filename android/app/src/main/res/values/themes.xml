@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose setzt das eigentliche Design; dieses Theme deckt nur Splash und Systemleisten ab. -->
+    <style name="Theme.ArtikelFinder" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

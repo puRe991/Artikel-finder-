@@ -1,0 +1,28 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Lokale Datenbank + Importartefakte
+*.db
+*.db-shm
+*.db-wal
+*.csv.gz
+
+# Android / Gradle
+.gradle/
+.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# IDE / OS
+.idea/
+.DS_Store
