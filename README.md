@@ -67,7 +67,8 @@ dotnet run -- marken --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
 dotnet run -- export
 ```
 
-`marken` fragt jede Marke in allen vier Datenbanken der Open-Food-Facts-Familie ab. Einzelne
+`marken` fragt jede Marke in allen fünf Quellen ab (Open Food Facts über Produkt-API und
+Suchdienst, dazu Open Beauty Facts, Open Products Facts, Open Pet Food Facts). Einzelne
 Marken gehen mit `--marke k-classic --marke k-bio`, ein anderes Land mit `--land ""` (alle).
 Beide Importwege schreiben in denselben Katalog und gleichen über die EAN ab — die
 Reihenfolge ist egal, doppelte Läufe schaden nicht.
