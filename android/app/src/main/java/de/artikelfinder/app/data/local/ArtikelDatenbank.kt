@@ -11,6 +11,7 @@ import androidx.room.RoomDatabase
         PreisEintrag::class,
         StandortEintrag::class,
         VerlaufEintrag::class,
+        MerkpostenEintrag::class,
     ],
     version = 1,
     exportSchema = false,
@@ -21,4 +22,5 @@ abstract class ArtikelDatenbank : RoomDatabase() {
     abstract fun standortDao(): StandortDao
     abstract fun verlaufDao(): VerlaufDao
     abstract fun stammdatenDao(): StammdatenDao
+    abstract fun merkpostenDao(): MerkpostenDao
 }

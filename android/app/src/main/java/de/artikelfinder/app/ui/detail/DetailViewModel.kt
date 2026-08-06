@@ -19,6 +19,8 @@ data class DetailZustand(
     val laedt: Boolean = true,
     val fehler: String? = null,
     val speichert: Boolean = false,
+    /** Zuletzt eingetipptes Aktionsende, als Vorbelegung im Preisdialog. */
+    val vorbelegtesAktionsende: Long? = null,
     /** Einmalige Rückmeldung für eine Snackbar. */
     val meldung: String? = null,
 )
@@ -36,6 +38,15 @@ class DetailViewModel @Inject constructor(
 
     init {
         laden()
+
+        // Beim Abtippen eines Prospekts gilt fuer alle Angebote derselbe Zeitraum.
+        viewModelScope.launch {
+            repository.letztesAktionsende()?.let { ende ->
+                if (ende > System.currentTimeMillis()) {
+                    _zustand.value = _zustand.value.copy(vorbelegtesAktionsende = ende)
+                }
+            }
+        }
     }
 
     fun laden() {

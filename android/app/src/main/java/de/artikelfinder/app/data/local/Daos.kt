@@ -156,6 +156,21 @@ interface ArtikelDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun stapelEinfuegen(artikel: List<ArtikelEintrag>)
+
+    /**
+     * Laufende Angebote, das am schnellsten ablaufende zuerst. Angebote ohne Enddatum
+     * stehen hinten — sie laufen bis auf Weiteres.
+     */
+    @Query(
+        """
+        $AKTUELLER_STAND
+        WHERE p.werbepreis IS NOT NULL
+          AND (p.werbepreis_von IS NULL OR p.werbepreis_von <= :jetzt)
+          AND (p.werbepreis_bis IS NULL OR p.werbepreis_bis >= :jetzt)
+        ORDER BY COALESCE(p.werbepreis_bis, 9223372036854775807), a.name COLLATE NOCASE
+        """
+    )
+    fun aktiveAngebote(marktId: Int, jetzt: Long): Flow<List<ArtikelMitStand>>
 }
 
 data class GangZeile(val gang: String, val anzahl: Int)
@@ -193,6 +208,15 @@ interface VerlaufDao {
 
     @Query("SELECT * FROM verlauf WHERE artikel_id = :artikelId ORDER BY geaendert_am DESC, id DESC")
     suspend fun fuerArtikel(artikelId: String): List<VerlaufEintrag>
+}
+
+@Dao
+interface MerkpostenDao {
+    @Query("SELECT wert FROM merkposten WHERE schluessel = :schluessel")
+    suspend fun lesen(schluessel: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun schreiben(eintrag: MerkpostenEintrag)
 }
 
 @Dao

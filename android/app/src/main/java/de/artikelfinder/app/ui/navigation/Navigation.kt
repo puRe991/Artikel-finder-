@@ -10,6 +10,7 @@ object Ziele {
     const val SUCHE = "suche"
     const val SCAN = "scan"
     const val GAENGE = "gaenge"
+    const val ANGEBOTE = "angebote"
 
     const val DETAIL = "artikel/{artikelId}"
     fun detail(artikelId: String) = "artikel/$artikelId"

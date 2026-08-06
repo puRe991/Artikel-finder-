@@ -37,6 +37,23 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     private val verlaufDao get() = datenbank.verlaufDao()
     private val stammdatenDao get() = datenbank.stammdatenDao()
 
+    /** Laufende Angebote, das am schnellsten ablaufende zuerst. */
+    fun aktiveAngebote(): Flow<List<Artikel>> =
+        artikelDao.aktiveAngebote(STANDARD_MARKT, System.currentTimeMillis())
+            .map { liste -> liste.map { it.zuModell() } }
+
+    /**
+     * Der zuletzt eingetippte Aktionszeitraum. Beim Abtippen eines Prospekts gilt derselbe
+     * Zeitraum fuer jedes Angebot; ihn 40-mal einzugeben waere die eigentliche Arbeit.
+     */
+    suspend fun letztesAktionsende(): Long? =
+        datenbank.merkpostenDao().lesen(MERKPOSTEN_AKTIONSENDE)?.toLongOrNull()
+
+    suspend fun aktionsendeMerken(zeitpunkt: Long) =
+        datenbank.merkpostenDao().schreiben(
+            de.artikelfinder.app.data.local.MerkpostenEintrag(MERKPOSTEN_AKTIONSENDE, zeitpunkt.toString())
+        )
+
     fun zuletztBearbeitet(): Flow<List<Artikel>> =
         artikelDao.zuletztBearbeitet(STANDARD_MARKT).map { liste -> liste.map { it.zuModell() } }
 
@@ -227,6 +244,10 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             return Abruf.Fehler("Der Werbepreis darf nicht über dem Normalpreis liegen.")
         }
 
+        if (werbepreis != null && werbepreisBis != null) {
+            aktionsendeMerken(werbepreisBis)
+        }
+
         val eintrag = preisErfassenIntern(
             artikelId, preis, werbepreis, werbepreisBis, erfasstVon, System.currentTimeMillis()
         )
@@ -400,6 +421,10 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     }
 
     private fun String?.leerAlsNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
+    private companion object {
+        const val MERKPOSTEN_AKTIONSENDE = "aktionsende"
+    }
 }
 
 // --- Zuordnung Datenbank -> UI-Modell ---

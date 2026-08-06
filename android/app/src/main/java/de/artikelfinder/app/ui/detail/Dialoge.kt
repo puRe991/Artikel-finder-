@@ -26,12 +26,17 @@ import java.time.format.DateTimeFormatter
  */
 @Composable
 fun PreisDialog(
+    vorbelegtesAktionsende: Long? = null,
     beiAbbrechen: () -> Unit,
     beiSpeichern: (preis: Double, werbepreis: Double?, gueltigBis: Long?, erfasstVon: String?) -> Unit,
 ) {
     var preisText by remember { mutableStateOf("") }
     var werbepreisText by remember { mutableStateOf("") }
-    var gueltigBisText by remember { mutableStateOf("") }
+    // Vorbelegt mit dem zuletzt genutzten Aktionsende: bei einem Prospekt mit 40 Angeboten
+    // spart das 40-mal dieselbe Datumseingabe.
+    var gueltigBisText by remember {
+        mutableStateOf(vorbelegtesAktionsende?.let { alsTagesDatum(it) } ?: "")
+    }
     var erfasstVon by remember { mutableStateOf("") }
 
     val preis = preisText.alsBetrag()
@@ -148,6 +153,13 @@ fun StandortDialog(
         dismissButton = { TextButton(onClick = beiAbbrechen) { Text("Abbrechen") } },
     )
 }
+
+/** Millisekunden zurueck in die Eingabeform TT.MM.JJJJ. */
+fun alsTagesDatum(zeitpunkt: Long): String =
+    java.time.Instant.ofEpochMilli(zeitpunkt)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+        .format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
 
 /** Akzeptiert Komma und Punkt — auf der deutschen Tastatur liegt das Komma näher. */
 fun String.alsBetrag(): Double? = trim()

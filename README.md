@@ -19,8 +19,8 @@ android/                              Die App — Kotlin, Jetpack Compose, Room
   app/src/main/assets/                Der ausgelieferte Artikelkatalog
   app/src/main/java/de/artikelfinder/app/
     data/                             Room-Datenbank, Repository, Katalogaufbau
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf
-  app/src/test/                       27 Tests gegen echtes SQLite (Robolectric)
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote
+  app/src/test/                       31 Tests gegen echtes SQLite (Robolectric)
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
@@ -40,7 +40,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew test                 # 27 Tests
+./gradlew test                 # 31 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -98,6 +98,12 @@ Die Normalisierung liegt in App und Backend doppelt vor und wird beidseitig gege
 dieselben Beispiele getestet — weicht eine Seite ab, findet die App Katalogartikel nicht
 mehr.
 
+**Wochenangebote tippt man einmal, nicht vierzigmal.** Ein Prospekt gilt für alle Angebote
+im selben Zeitraum. Die App merkt sich deshalb das zuletzt eingegebene Aktionsende und
+belegt es beim nächsten Preis vor — beim Abtippen eines Prospekts ist das der Unterschied
+zwischen einer und vierzig Datumseingaben. Ein Preis ohne Werbepreis überschreibt den
+Merkposten nicht.
+
 **Barcode-Treffer werden doppelt bestätigt.** Ein Code gilt erst nach zweimaliger Erkennung
 hintereinander. Bei verknitterten Etiketten sind Einzelbild-Fehlerkennungen häufig, und ein
 falscher Barcode führt direkt zum falschen Artikel. Die Auswertung läuft über ML Kit
@@ -106,7 +112,7 @@ vollständig auf dem Gerät.
 ## Tests
 
 ```bash
-cd android && ./gradlew test       # 27 Tests
+cd android && ./gradlew test       # 31 Tests
 cd backend && dotnet test          # 55 Tests
 ```
 
@@ -120,8 +126,10 @@ dieser Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
 - Interaktive Grundriss-Karte (SVG) mit anklickbaren Zonen. Die Koordinatenfelder
   (`karten_x`, `karten_y` als relative 0..1-Werte) liegen im Modell bereit, die App nutzt
   bisher nur die Gang-Liste.
-- Erinnerung „Angebot läuft bald ab" — die Gültigkeitszeiträume sind erfasst, es fehlt der
-  Hintergrundjob plus Benachrichtigung.
+- Benachrichtigung, wenn ein Angebot ausläuft. Die Angebotsübersicht zeigt die Restlaufzeit
+  bereits an und hebt „läuft heute/morgen ab" hervor; es fehlt der Hintergrundjob, der von
+  sich aus meldet.
+- Prospektdaten als Datei einlesen, statt jedes Angebot einzeln zu erfassen.
 - Sicherung der eigenen Erfassungen (Export/Import), damit ein Gerätewechsel sie nicht
   verliert.
 

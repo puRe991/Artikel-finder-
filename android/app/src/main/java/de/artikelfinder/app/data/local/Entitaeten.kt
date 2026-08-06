@@ -121,6 +121,17 @@ data class VerlaufEintrag(
     @ColumnInfo(name = "geaendert_am") val geaendertAm: Long,
 )
 
+/**
+ * Merkposten der App, etwa der zuletzt eingetippte Aktionszeitraum. Beim Abtippen eines
+ * Prospekts gilt derselbe Zeitraum fuer alle Angebote — ihn jedes Mal neu einzugeben waere
+ * die eigentliche Tipparbeit.
+ */
+@Entity(tableName = "merkposten")
+data class MerkpostenEintrag(
+    @PrimaryKey val schluessel: String,
+    val wert: String,
+)
+
 /** Artikel samt aktuellem Preis und Standort — das Ergebnis der Trefferliste. */
 data class ArtikelMitStand(
     @androidx.room.Embedded val artikel: ArtikelEintrag,

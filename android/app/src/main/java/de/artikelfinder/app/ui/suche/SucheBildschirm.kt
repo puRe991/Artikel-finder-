@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
@@ -45,6 +46,7 @@ fun SucheBildschirm(
     beiArtikel: (String) -> Unit,
     beiScan: () -> Unit,
     beiGaengen: () -> Unit,
+    beiAngeboten: () -> Unit,
     beiNeuemArtikel: () -> Unit,
     viewModel: SucheViewModel = hiltViewModel(),
 ) {
@@ -55,6 +57,9 @@ fun SucheBildschirm(
             TopAppBar(
                 title = { Text("Artikel-Finder") },
                 actions = {
+                    IconButton(onClick = beiAngeboten) {
+                        Icon(Icons.Default.LocalOffer, contentDescription = "Angebote")
+                    }
                     IconButton(onClick = beiGaengen) {
                         Icon(Icons.Default.Map, contentDescription = "Gänge")
                     }

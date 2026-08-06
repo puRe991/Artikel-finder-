@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import de.artikelfinder.app.ui.angebote.AngeboteBildschirm
 import de.artikelfinder.app.ui.bearbeiten.BearbeitenBildschirm
 import de.artikelfinder.app.ui.detail.DetailBildschirm
 import de.artikelfinder.app.ui.gaenge.GaengeBildschirm
@@ -25,6 +26,7 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
                 beiArtikel = { navController.navigate(Ziele.detail(it)) },
                 beiScan = { navController.navigate(Ziele.SCAN) },
                 beiGaengen = { navController.navigate(Ziele.GAENGE) },
+                beiAngeboten = { navController.navigate(Ziele.ANGEBOTE) },
                 beiNeuemArtikel = { navController.navigate(Ziele.bearbeiten()) },
             )
         }
@@ -89,6 +91,13 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
                         popUpTo(Ziele.BEARBEITEN) { inclusive = true }
                     }
                 },
+            )
+        }
+
+        composable(Ziele.ANGEBOTE) {
+            AngeboteBildschirm(
+                beiArtikel = { navController.navigate(Ziele.detail(it)) },
+                beiZurueck = navController::popBackStack,
             )
         }
 

@@ -111,6 +111,7 @@ fun DetailBildschirm(
 
     if (preisDialogOffen) {
         PreisDialog(
+            vorbelegtesAktionsende = zustand.vorbelegtesAktionsende,
             beiAbbrechen = { preisDialogOffen = false },
             beiSpeichern = { preis, werbepreis, bis, von ->
                 preisDialogOffen = false

@@ -3,6 +3,7 @@ package de.artikelfinder.app.data
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import de.artikelfinder.app.data.local.ArtikelDatenbank
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -174,6 +175,71 @@ class ArtikelRepositoryTest {
         assertEquals(3, verlauf.size) // Artikel + Erstpreis + neuer Preis
         assertEquals("Preis 1,49 -> 1,59 EUR", verlauf.first().beschreibung)
         assertTrue(verlauf.all { it.geaendertVon == "tobias" })
+    }
+
+    @Test
+    fun `Angebotsliste enthaelt nur laufende Aktionen`() = runTest {
+        val laufend = repository.anlegen(name = "Laufendes Angebot").erfolg()
+        val abgelaufen = repository.anlegen(name = "Abgelaufenes Angebot").erfolg()
+        val ohneAktion = repository.anlegen(name = "Normalpreis").erfolg()
+
+        repository.preisErfassen(
+            laufend.artikel.id, 2.00, werbepreis = 1.50,
+            werbepreisBis = System.currentTimeMillis() + 2 * 86_400_000,
+        )
+        repository.preisErfassen(
+            abgelaufen.artikel.id, 2.00, werbepreis = 1.50,
+            werbepreisBis = System.currentTimeMillis() - 1,
+        )
+        repository.preisErfassen(ohneAktion.artikel.id, 2.00)
+
+        val angebote = repository.aktiveAngebote().first()
+
+        assertEquals(listOf("Laufendes Angebot"), angebote.map { it.name })
+    }
+
+    @Test
+    fun `Angebote werden nach Ablauf sortiert`() = runTest {
+        val spaet = repository.anlegen(name = "Laeuft spaet ab").erfolg()
+        val frueh = repository.anlegen(name = "Laeuft frueh ab").erfolg()
+
+        repository.preisErfassen(
+            spaet.artikel.id, 2.00, werbepreis = 1.50,
+            werbepreisBis = System.currentTimeMillis() + 5 * 86_400_000,
+        )
+        repository.preisErfassen(
+            frueh.artikel.id, 2.00, werbepreis = 1.50,
+            werbepreisBis = System.currentTimeMillis() + 86_400_000,
+        )
+
+        // Was zuerst ablaeuft, gehoert nach oben — danach richtet sich der Einkauf.
+        assertEquals(
+            listOf("Laeuft frueh ab", "Laeuft spaet ab"),
+            repository.aktiveAngebote().first().map { it.name },
+        )
+    }
+
+    @Test
+    fun `Aktionsende wird fuer die naechste Eingabe gemerkt`() = runTest {
+        val artikel = repository.anlegen(name = "Prospektartikel").erfolg()
+        val ende = System.currentTimeMillis() + 3 * 86_400_000
+
+        repository.preisErfassen(artikel.artikel.id, 2.00, werbepreis = 1.50, werbepreisBis = ende)
+
+        // Beim naechsten Angebot desselben Prospekts soll das Datum vorbelegt sein.
+        assertEquals(ende, repository.letztesAktionsende())
+    }
+
+    @Test
+    fun `Preis ohne Werbepreis ueberschreibt das gemerkte Aktionsende nicht`() = runTest {
+        val a = repository.anlegen(name = "Mit Aktion").erfolg()
+        val ende = System.currentTimeMillis() + 3 * 86_400_000
+        repository.preisErfassen(a.artikel.id, 2.00, werbepreis = 1.50, werbepreisBis = ende)
+
+        val b = repository.anlegen(name = "Ohne Aktion").erfolg()
+        repository.preisErfassen(b.artikel.id, 3.00)
+
+        assertEquals(ende, repository.letztesAktionsende())
     }
 
     @Test
