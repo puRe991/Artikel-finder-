@@ -9,6 +9,8 @@ import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import java.util.Locale
 import java.util.UUID
@@ -64,22 +66,15 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         seite: Int = 1,
         seitengroesse: Int = 50,
     ): Abruf<List<Artikel>> {
-        val tokens = Suchtext.normalisieren(suchbegriff)
-            .split(' ')
-            .filter { it.isNotBlank() }
-            .take(3)
-
-        // Die Abfrage erwartet immer drei Muster; nicht belegte sind als '%' neutral.
-        val muster = List(3) { i -> tokens.getOrNull(i)?.let { "%$it%" } ?: "%" }
-        val kategorien = kategorieId?.let { zweigIds(it) } ?: emptyList()
+        val parameter = suchparameter(suchbegriff, kategorieId, nurMitWerbepreis)
 
         val treffer = artikelDao.suchen(
-            hatSuche = if (tokens.isEmpty()) 0 else 1,
-            t1 = muster[0], t2 = muster[1], t3 = muster[2],
-            kategorieIds = kategorien,
-            kategorieAnzahl = kategorien.size,
+            hatSuche = parameter.hatSuche,
+            t1 = parameter.muster[0], t2 = parameter.muster[1], t3 = parameter.muster[2],
+            kategorieIds = parameter.kategorieIds,
+            kategorieAnzahl = parameter.kategorieIds.size,
             nurMitStandort = 0,
-            nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+            nurMitWerbepreis = parameter.nurMitWerbepreis,
             jetzt = System.currentTimeMillis(),
             marktId = STANDARD_MARKT,
             grenze = seitengroesse,
@@ -89,22 +84,52 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         return Abruf.Erfolg(treffer.map { it.zuModell() })
     }
 
+    /**
+     * Dieselbe Suche, aber beobachtend. Erfasst man auf der Detailseite einen Preis, steht die
+     * Trefferliste darunter noch im Rücken-Stapel; als einmalige Abfrage zeigte sie danach
+     * weiter "Kein Preis". Als Flow zieht Room die Liste nach.
+     */
+    fun suchenLive(
+        suchbegriff: String?,
+        kategorieId: Int? = null,
+        nurMitWerbepreis: Boolean = false,
+        seite: Int = 1,
+        seitengroesse: Int = 50,
+    ): Flow<List<Artikel>> = flow {
+        // Die Kategoriezweige stehen in der Datenbank, das Aufbauen der Parameter ist deshalb
+        // selbst eine Abfrage — sie gehört in den Flow und nicht vor ihn.
+        val parameter = suchparameter(suchbegriff, kategorieId, nurMitWerbepreis)
+
+        emitAll(
+            artikelDao.suchenLive(
+                hatSuche = parameter.hatSuche,
+                t1 = parameter.muster[0], t2 = parameter.muster[1], t3 = parameter.muster[2],
+                kategorieIds = parameter.kategorieIds,
+                kategorieAnzahl = parameter.kategorieIds.size,
+                nurMitStandort = 0,
+                nurMitWerbepreis = parameter.nurMitWerbepreis,
+                jetzt = System.currentTimeMillis(),
+                marktId = STANDARD_MARKT,
+                grenze = seitengroesse,
+                versatz = (seite - 1) * seitengroesse,
+            ).map { liste -> liste.map { it.zuModell() } }
+        )
+    }
+
     suspend fun anzahlTreffer(
         suchbegriff: String?,
         kategorieId: Int? = null,
         nurMitWerbepreis: Boolean = false,
     ): Int {
-        val tokens = Suchtext.normalisieren(suchbegriff).split(' ').filter { it.isNotBlank() }.take(3)
-        val muster = List(3) { i -> tokens.getOrNull(i)?.let { "%$it%" } ?: "%" }
-        val kategorien = kategorieId?.let { zweigIds(it) } ?: emptyList()
+        val parameter = suchparameter(suchbegriff, kategorieId, nurMitWerbepreis)
 
         return artikelDao.anzahlTreffer(
-            hatSuche = if (tokens.isEmpty()) 0 else 1,
-            t1 = muster[0], t2 = muster[1], t3 = muster[2],
-            kategorieIds = kategorien,
-            kategorieAnzahl = kategorien.size,
+            hatSuche = parameter.hatSuche,
+            t1 = parameter.muster[0], t2 = parameter.muster[1], t3 = parameter.muster[2],
+            kategorieIds = parameter.kategorieIds,
+            kategorieAnzahl = parameter.kategorieIds.size,
             nurMitStandort = 0,
-            nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+            nurMitWerbepreis = parameter.nurMitWerbepreis,
             jetzt = System.currentTimeMillis(),
             marktId = STANDARD_MARKT,
         )
@@ -395,6 +420,36 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             geaendertVon = von.leerAlsNull(),
             geaendertAm = jetzt,
         )
+    )
+
+    /**
+     * Übersetzt Suchbegriff und Filter in die Argumente der Abfrage. Die einmalige und die
+     * beobachtende Suche müssen hier zwingend dasselbe tun, sonst weichen ihre Treffer ab.
+     */
+    private suspend fun suchparameter(
+        suchbegriff: String?,
+        kategorieId: Int?,
+        nurMitWerbepreis: Boolean,
+    ): Suchparameter {
+        val tokens = Suchtext.normalisieren(suchbegriff)
+            .split(' ')
+            .filter { it.isNotBlank() }
+            .take(3)
+
+        return Suchparameter(
+            hatSuche = if (tokens.isEmpty()) 0 else 1,
+            // Die Abfrage erwartet immer drei Muster; nicht belegte sind als '%' neutral.
+            muster = List(3) { i -> tokens.getOrNull(i)?.let { "%$it%" } ?: "%" },
+            kategorieIds = kategorieId?.let { zweigIds(it) } ?: emptyList(),
+            nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+        )
+    }
+
+    private class Suchparameter(
+        val hatSuche: Int,
+        val muster: List<String>,
+        val kategorieIds: List<Int>,
+        val nurMitWerbepreis: Int,
     )
 
     /** Die Kategorie selbst plus alle Unterkategorien. */

@@ -36,6 +36,24 @@ private const val AKTUELLER_STAND = """
     )
 """
 
+/**
+ * Trefferliste der Suche. Als Konstante herausgezogen, weil sie zweimal gebraucht wird: einmal
+ * als einmalige Abfrage und einmal als beobachtender Flow. Beide müssen zwingend dieselbe
+ * Auswahl liefern, sonst zeigt die Trefferliste je nach Aufrufweg etwas anderes an.
+ */
+private const val SUCHE = """
+    $AKTUELLER_STAND
+    WHERE (:hatSuche = 0 OR (a.suchtext LIKE :t1 AND a.suchtext LIKE :t2 AND a.suchtext LIKE :t3))
+      AND (:kategorieAnzahl = 0 OR a.kategorie_id IN (:kategorieIds))
+      AND (:nurMitStandort = 0 OR s.id IS NOT NULL)
+      AND (:nurMitWerbepreis = 0 OR (
+            p.werbepreis IS NOT NULL
+            AND (p.werbepreis_von IS NULL OR p.werbepreis_von <= :jetzt)
+            AND (p.werbepreis_bis IS NULL OR p.werbepreis_bis >= :jetzt)))
+    ORDER BY a.name COLLATE NOCASE
+    LIMIT :grenze OFFSET :versatz
+"""
+
 @Dao
 interface ArtikelDao {
 
@@ -56,20 +74,7 @@ interface ArtikelDao {
      * UND-verknüpft; leere Begriffe sind als '%' neutral, damit eine einzige Abfrage für
      * alle Fälle reicht.
      */
-    @Query(
-        """
-        $AKTUELLER_STAND
-        WHERE (:hatSuche = 0 OR (a.suchtext LIKE :t1 AND a.suchtext LIKE :t2 AND a.suchtext LIKE :t3))
-          AND (:kategorieAnzahl = 0 OR a.kategorie_id IN (:kategorieIds))
-          AND (:nurMitStandort = 0 OR s.id IS NOT NULL)
-          AND (:nurMitWerbepreis = 0 OR (
-                p.werbepreis IS NOT NULL
-                AND (p.werbepreis_von IS NULL OR p.werbepreis_von <= :jetzt)
-                AND (p.werbepreis_bis IS NULL OR p.werbepreis_bis >= :jetzt)))
-        ORDER BY a.name COLLATE NOCASE
-        LIMIT :grenze OFFSET :versatz
-        """
-    )
+    @Query(SUCHE)
     suspend fun suchen(
         hatSuche: Int,
         t1: String,
@@ -84,6 +89,27 @@ interface ArtikelDao {
         grenze: Int,
         versatz: Int,
     ): List<ArtikelMitStand>
+
+    /**
+     * Dieselbe Suche als Flow. Die Trefferliste bleibt im Rücken-Stapel stehen, während Preis
+     * und Standort auf der Detailseite erfasst werden — ohne Beobachtung zeigte sie danach
+     * weiter den Stand von vor der Erfassung, also "Kein Preis".
+     */
+    @Query(SUCHE)
+    fun suchenLive(
+        hatSuche: Int,
+        t1: String,
+        t2: String,
+        t3: String,
+        kategorieIds: List<Int>,
+        kategorieAnzahl: Int,
+        nurMitStandort: Int,
+        nurMitWerbepreis: Int,
+        jetzt: Long,
+        marktId: Int,
+        grenze: Int,
+        versatz: Int,
+    ): Flow<List<ArtikelMitStand>>
 
     @Query(
         """
@@ -116,13 +142,24 @@ interface ArtikelDao {
         marktId: Int,
     ): Int
 
-    /** Zuletzt bearbeitete oder angelegte Artikel — der Einstieg ohne Suchbegriff. */
+    /**
+     * Zuletzt bearbeitete oder angelegte Artikel — der Einstieg ohne Suchbegriff.
+     *
+     * Preis- und Standorterfassung zählen als Bearbeitung: sie ändern den Artikeldatensatz
+     * nicht, sind aber genau das, was man an einem Katalogartikel tut. Alle Katalogartikel
+     * teilen sich zudem denselben `erstellt_am` aus dem Import — nach ihm allein sortiert
+     * landete ein frisch erfasster Artikel an beliebiger Stelle und fiel aus dem Limit.
+     */
     @Query(
         """
         $AKTUELLER_STAND
         WHERE a.erstellt_von = 'Nutzer' OR a.geaendert_am IS NOT NULL
            OR p.id IS NOT NULL OR s.id IS NOT NULL
-        ORDER BY COALESCE(a.geaendert_am, a.erstellt_am) DESC
+        ORDER BY MAX(
+            COALESCE(a.geaendert_am, a.erstellt_am),
+            COALESCE(p.erfasst_am, 0),
+            COALESCE(s.erfasst_am, 0)
+        ) DESC
         LIMIT :grenze
         """
     )

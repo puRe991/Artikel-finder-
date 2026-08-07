@@ -76,6 +76,42 @@ class ArtikelRepositoryTest {
     }
 
     @Test
+    fun `Beobachtete Suche zeigt einen nachtraeglich erfassten Preis`() = runTest {
+        // Der Fall aus der Hauptansicht: gesucht wird vor der Erfassung, angezeigt danach.
+        val artikel = repository.anlegen(name = "Preisnachtrag", ean = FREIE_EAN).erfolg()
+        assertNull(repository.suchenLive("Preisnachtrag").first().single().preis)
+
+        repository.preisErfassen(artikel.artikel.id, 2.49)
+
+        val beobachtet = repository.suchenLive("Preisnachtrag").first()
+        assertEquals(2.49, beobachtet.single().preis!!.preis, 0.001)
+        // Beide Wege müssen dasselbe liefern, sonst zeigt die Liste je nach Aufruf anderes an.
+        assertEquals(repository.suchen("Preisnachtrag").erfolg().map { it.id }, beobachtet.map { it.id })
+    }
+
+    @Test
+    fun `Ein erfasster Preis haelt den Katalogartikel unter den zuletzt bearbeiteten`() = runTest {
+        val katalogartikel = datenbank.artikelDao()
+            .suchen(0, "%", "%", "%", emptyList(), 0, 0, 0, 0, 1, 1, 0)
+            .first().artikel
+
+        // Alle Katalogartikel teilen sich denselben Importzeitpunkt, und der liegt vor jeder
+        // Neuanlage. Nach ihm allein sortiert rutschte ein eben erfasster Artikel hinter die
+        // 50 Neuanlagen — also aus der Liste heraus.
+        repeat(60) { nummer -> repository.anlegen(name = "Neuanlage $nummer") }
+        repository.preisErfassen(katalogartikel.id, 1.09)
+
+        val liste = repository.zuletztBearbeitet().first()
+
+        assertEquals(50, liste.size)
+        assertTrue(
+            "Der eben erfasste Artikel fehlt in der Liste",
+            liste.any { it.id == katalogartikel.id },
+        )
+        assertEquals(1.09, liste.first { it.id == katalogartikel.id }.preis!!.preis, 0.001)
+    }
+
+    @Test
     fun `Anlegen mit Preis und Standort erzeugt alles in einem Schritt`() = runTest {
         val detail = repository.anlegen(
             name = "Testartikel",

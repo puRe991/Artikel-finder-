@@ -7,15 +7,22 @@ import de.artikelfinder.app.data.Abruf
 import de.artikelfinder.app.data.Artikel
 import de.artikelfinder.app.data.ArtikelRepository
 import de.artikelfinder.app.data.Kategorie
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -34,7 +41,34 @@ data class SucheZustand(
         get() = suchbegriff.isBlank() && gewaehlteKategorieId == null && !nurMitWerbepreis
 }
 
-@OptIn(FlowPreview::class)
+/** Alles außer dem Suchtext — das wird angetippt, nicht getippt, und wirkt deshalb sofort. */
+private data class Suchfilter(
+    val kategorieId: Int? = null,
+    val nurMitWerbepreis: Boolean = false,
+    /** Hochzählen erzwingt eine erneute Abfrage bei unveränderter Eingabe. */
+    val versuch: Int = 0,
+)
+
+/**
+ * Auftrag an die Suche. Bewusst getrennt vom Anzeigezustand: dieser ändert sich mit jedem
+ * Treffer, der Auftrag nur, wenn der Nutzer etwas eingibt — und nur dann ist neu zu suchen.
+ */
+private data class Suchauftrag(
+    val suchbegriff: String,
+    val filter: Suchfilter,
+) {
+    val zeigtVerlauf: Boolean
+        get() = suchbegriff.isBlank() && filter.kategorieId == null && !filter.nurMitWerbepreis
+}
+
+/** Eine Zwischenmeldung der Trefferabfrage. `treffer == null` heißt "Liste unverändert". */
+private data class Trefferstand(
+    val treffer: List<Artikel>?,
+    val laedt: Boolean = false,
+    val fehler: String? = null,
+)
+
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SucheViewModel @Inject constructor(
     private val repository: ArtikelRepository,
@@ -44,14 +78,25 @@ class SucheViewModel @Inject constructor(
     val zustand: StateFlow<SucheZustand> = _zustand.asStateFlow()
 
     private val eingabe = MutableStateFlow("")
-    private var suchauftrag: Job? = null
+    private val filter = MutableStateFlow(Suchfilter())
 
     init {
-        // Erst tippen lassen, dann suchen — sonst löst jeder Buchstabe einen Request aus.
-        eingabe
-            .debounce(300)
+        combine(
+            // Erst tippen lassen, dann suchen — sonst löst jeder Buchstabe eine Abfrage aus.
+            eingabe.debounce(300),
+            filter,
+        ) { begriff, gewaehlt -> Suchauftrag(begriff, gewaehlt) }
             .distinctUntilChanged()
-            .onEach { suchen() }
+            .flatMapLatest { trefferstrom(it) }
+            .onEach { stand ->
+                _zustand.value = _zustand.value.copy(
+                    // Die alte Liste stehen lassen, solange die neue lädt — sonst blitzt
+                    // zwischendurch „Keine Treffer“ auf.
+                    treffer = stand.treffer ?: _zustand.value.treffer,
+                    laedt = stand.laedt,
+                    fehler = stand.fehler,
+                )
+            }
             .launchIn(viewModelScope)
 
         repository.zuletztBearbeitet()
@@ -74,49 +119,39 @@ class SucheViewModel @Inject constructor(
 
     fun kategorieGewaehlt(kategorieId: Int?) {
         _zustand.value = _zustand.value.copy(gewaehlteKategorieId = kategorieId)
-        suchen()
+        filter.value = filter.value.copy(kategorieId = kategorieId)
     }
 
     fun werbepreisFilterUmschalten() {
-        _zustand.value = _zustand.value.copy(nurMitWerbepreis = !_zustand.value.nurMitWerbepreis)
-        suchen()
+        val nurAngebote = !_zustand.value.nurMitWerbepreis
+        _zustand.value = _zustand.value.copy(nurMitWerbepreis = nurAngebote)
+        filter.value = filter.value.copy(nurMitWerbepreis = nurAngebote)
     }
 
-    fun aktualisieren() = suchen()
+    fun aktualisieren() {
+        filter.value = filter.value.copy(versuch = filter.value.versuch + 1)
+    }
 
-    private fun suchen() {
-        val aktuell = _zustand.value
+    private fun trefferstrom(auftrag: Suchauftrag): Flow<Trefferstand> {
+        // Ohne Suchbegriff und Filter zeigt der Bildschirm die zuletzt bearbeiteten Artikel;
+        // die kommen aus einem eigenen Flow und brauchen keine Trefferliste.
+        if (auftrag.zeigtVerlauf) return flowOf(Trefferstand(treffer = emptyList()))
 
-        if (aktuell.zeigtVerlauf) {
-            suchauftrag?.cancel()
-            _zustand.value = aktuell.copy(treffer = emptyList(), laedt = false, fehler = null)
-            return
-        }
-
-        // Ein laufender Request zu einem älteren Suchbegriff darf das Ergebnis nicht mehr
-        // überschreiben.
-        suchauftrag?.cancel()
-        suchauftrag = viewModelScope.launch {
-            _zustand.value = _zustand.value.copy(laedt = true, fehler = null)
-
-            val ergebnis = repository.suchen(
-                suchbegriff = aktuell.suchbegriff,
-                kategorieId = aktuell.gewaehlteKategorieId,
-                nurMitWerbepreis = aktuell.nurMitWerbepreis,
+        return repository
+            .suchenLive(
+                suchbegriff = auftrag.suchbegriff,
+                kategorieId = auftrag.filter.kategorieId,
+                nurMitWerbepreis = auftrag.filter.nurMitWerbepreis,
             )
-
-            _zustand.value = when (ergebnis) {
-                is Abruf.Erfolg -> _zustand.value.copy(
-                    treffer = ergebnis.wert,
-                    laedt = false,
-                    fehler = null,
-                )
-                is Abruf.Fehler -> _zustand.value.copy(
-                    treffer = emptyList(),
-                    laedt = false,
-                    fehler = ergebnis.meldung,
+            .map { Trefferstand(treffer = it) }
+            .onStart { emit(Trefferstand(treffer = null, laedt = true)) }
+            .catch { fehler ->
+                emit(
+                    Trefferstand(
+                        treffer = emptyList(),
+                        fehler = fehler.message ?: "Die Suche ist fehlgeschlagen.",
+                    )
                 )
             }
-        }
     }
 }
