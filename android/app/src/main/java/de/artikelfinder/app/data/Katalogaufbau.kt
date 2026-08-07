@@ -28,7 +28,7 @@ sealed interface Aufbauzustand {
 /**
  * Baut beim ersten Start die Datenbank aus der mitgelieferten Katalogdatei auf.
  *
- * Der Katalog liegt als gepacktes TSV in den Assets (rund 420 KB für gut 15.000 Artikel).
+ * Der Katalog liegt als gepacktes TSV in den Assets (rund 520 KB für gut 19.000 Artikel).
  * Ihn beim ersten Start einzulesen ist deutlich sparsamer, als eine fertige
  * SQLite-Datenbank von mehreren Megabyte in die APK zu legen.
  */

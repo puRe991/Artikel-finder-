@@ -174,8 +174,7 @@ public sealed class ApiImporterTests : IAsyncLifetime
         public int Aufrufe { get; private set; }
 
         public Task<OffSeitenergebnis> SuchenAsync(
-            string kategorieTag,
-            string land,
+            OffAbfrage abfrage,
             int seite,
             int seitengroesse,
             CancellationToken ct)

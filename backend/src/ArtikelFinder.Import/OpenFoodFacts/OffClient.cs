@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace ArtikelFinder.Import.OpenFoodFacts;
 
 /// <summary>
-/// Zugriff auf die Open-Food-Facts-Suche (API v2).
+/// Zugriff auf die Suche der Open-Food-Facts-Familie (API v2). Welche Datenbank gefragt wird
+/// und wonach gefiltert wird, steht in der <see cref="OffAbfrage"/>.
 ///
 /// Zwei Regeln aus deren Nutzungsbedingungen sind hier fest verdrahtet:
 /// ein aussagekraeftiger User-Agent mit Kontaktmoeglichkeit und eine Wartezeit zwischen
@@ -39,8 +40,7 @@ public readonly record struct OffSeitenergebnis
 public interface IOffClient
 {
     Task<OffSeitenergebnis> SuchenAsync(
-        string kategorieTag,
-        string land,
+        OffAbfrage abfrage,
         int seite,
         int seitengroesse,
         CancellationToken ct);
@@ -70,22 +70,16 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
     };
 
     public async Task<OffSeitenergebnis> SuchenAsync(
-        string kategorieTag,
-        string land,
+        OffAbfrage abfrage,
         int seite,
         int seitengroesse,
         CancellationToken ct)
     {
-        var pfad = "api/v2/search"
-            + $"?categories_tags={Uri.EscapeDataString(kategorieTag)}"
-            + $"&countries_tags={Uri.EscapeDataString(land)}"
-            + $"&fields={Felder}"
-            + $"&page={seite}"
-            + $"&page_size={seitengroesse}";
+        var pfad = Adresse(abfrage, seite, seitengroesse);
 
         for (var versuch = 0; ; versuch++)
         {
-            var (antwort, wiederholbar) = await VersuchenAsync(pfad, seite, ct);
+            var (antwort, wiederholbar) = await VersuchenAsync(abfrage, pfad, seite, ct);
 
             if (antwort is not null)
             {
@@ -101,24 +95,65 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
             if (versuch >= Wartezeiten.Length)
             {
                 log.LogWarning(
-                    "Seite {Seite} von {Tag} auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
-                    seite, kategorieTag, Wartezeiten.Length + 1);
+                    "Seite {Seite} von {Abfrage} auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
+                    seite, abfrage, Wartezeiten.Length + 1);
 
                 return OffSeitenergebnis.Fehlgeschlagen;
             }
 
             var warten = Wartezeiten[versuch];
             log.LogInformation(
-                "Seite {Seite} von {Tag} nicht verfügbar, neuer Versuch in {Sekunden}s.",
-                seite, kategorieTag, warten.TotalSeconds);
+                "Seite {Seite} von {Abfrage} nicht verfügbar, neuer Versuch in {Sekunden}s.",
+                seite, abfrage, warten.TotalSeconds);
 
             await Task.Delay(warten, ct);
         }
     }
 
+    /// <summary>
+    /// Baut die Adresse fuer eine Seite. Absolute Adresse statt BaseAddress: die Quellen
+    /// liegen unter eigenen Hostnamen.
+    /// </summary>
+    public static string Adresse(OffAbfrage abfrage, int seite, int seitengroesse)
+    {
+        if (abfrage.Datenbank.Api == OffApi.Suche)
+        {
+            // Der Suchdienst kennt keine Feldparameter, sondern eine Abfragesprache. Laender
+            // stehen dort mit Sprachpraefix im Index ("en:germany"), die Produkt-API nimmt
+            // sie ohne.
+            var frage = $"{abfrage.Feld}:\"{abfrage.Wert}\"";
+
+            if (!string.IsNullOrWhiteSpace(abfrage.Land))
+            {
+                var land = abfrage.Land.Contains(':') ? abfrage.Land : $"en:{abfrage.Land}";
+                frage += $" AND countries_tags:\"{land}\"";
+            }
+
+            return $"{abfrage.Datenbank.BasisAdresse}search"
+                + $"?q={Uri.EscapeDataString(frage)}"
+                + $"&fields={Felder}"
+                + $"&page={seite}"
+                + $"&page_size={seitengroesse}";
+        }
+
+        var pfad = $"{abfrage.Datenbank.BasisAdresse}api/v2/search"
+            + $"?{abfrage.Feld}={Uri.EscapeDataString(abfrage.Wert)}"
+            + $"&fields={Felder}"
+            + $"&page={seite}"
+            + $"&page_size={seitengroesse}";
+
+        if (!string.IsNullOrWhiteSpace(abfrage.Land))
+        {
+            pfad += $"&countries_tags={Uri.EscapeDataString(abfrage.Land)}";
+        }
+
+        return pfad;
+    }
+
     /// <summary>Ein einzelner Versuch. <c>Wiederholbar</c> unterscheidet "gerade überlastet"
     /// von "gibt es nicht".</summary>
     private async Task<(OffSuchantwort? Antwort, bool Wiederholbar)> VersuchenAsync(
+        OffAbfrage abfrage,
         string pfad,
         int seite,
         CancellationToken ct)
@@ -129,7 +164,11 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
 
             if (antwort.IsSuccessStatusCode)
             {
-                return (await antwort.Content.ReadFromJsonAsync<OffSuchantwort>(JsonOptionen, ct), false);
+                var gelesen = abfrage.Datenbank.Api == OffApi.Suche
+                    ? (await antwort.Content.ReadFromJsonAsync<OffSucheAntwort>(JsonOptionen, ct))?.AlsSuchantwort()
+                    : await antwort.Content.ReadFromJsonAsync<OffSuchantwort>(JsonOptionen, ct);
+
+                return (gelesen, false);
             }
 
             var status = (int)antwort.StatusCode;
@@ -137,7 +176,8 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
 
             if (!wiederholbar)
             {
-                log.LogWarning("Open Food Facts antwortete mit {Status} auf Seite {Seite}.", status, seite);
+                log.LogWarning(
+                    "{Abfrage} antwortete mit {Status} auf Seite {Seite}.", abfrage, status, seite);
             }
 
             return (null, wiederholbar);

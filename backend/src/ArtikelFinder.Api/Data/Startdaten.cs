@@ -25,6 +25,15 @@ public static class Startdaten
         ("Haushalt & Sonstiges", []),
     ];
 
+    /// <summary>
+    /// Alle Kategorienamen des Rasters, Ober- wie Unterkategorien. Der Import ordnet Artikel
+    /// ueber diese Namen zu — was hier fehlt, laesst er stillschweigend weg.
+    /// </summary>
+    public static IReadOnlySet<string> Kategorienamen { get; } =
+        Raster
+            .SelectMany(r => r.Unterkategorien.Prepend(r.Oberkategorie))
+            .ToHashSet(StringComparer.Ordinal);
+
     public static async Task AnwendenAsync(ArtikelFinderDbContext db, CancellationToken ct = default)
     {
         var etwasGeaendert = false;
