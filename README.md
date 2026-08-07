@@ -4,10 +4,11 @@ Artikelsuche für den Kaufland Gießen: Name, EAN, Normalpreis, laufender Werbep
 Gang, in dem der Artikel steht.
 
 **Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
-Der Artikelkatalog — gut 15.000 reale Produkte aus
-[Open Food Facts](https://world.openfoodfacts.org/data) — liegt in der App und wird beim
-ersten Start in die geräteeigene Datenbank geschrieben. Preise und Standorte trägst du
-beim Einkaufen selbst ein; sie bleiben auf dem Gerät.
+Der Artikelkatalog — gut 19.000 reale Produkte aus
+[Open Food Facts](https://world.openfoodfacts.org/data) und seinen Schwesterdatenbanken,
+darunter 4.261 Kaufland-Eigenmarkenartikel (K-Classic, K-Bio, Purland, Bevola …) — liegt in
+der App und wird beim ersten Start in die geräteeigene Datenbank geschrieben. Preise und
+Standorte trägst du beim Einkaufen selbst ein; sie bleiben auf dem Gerät.
 
 Eine Internetverbindung wird nur für die Produktbilder verwendet. Suche, Barcode-Scan,
 Preis- und Standorterfassung funktionieren vollständig offline.
@@ -83,7 +84,7 @@ ist idempotent (Abgleich über EAN).
 
 ## Entwurfsentscheidungen
 
-**Der Katalog liegt als Textdatei bei, nicht als fertige Datenbank.** 2,2 MB TSV statt
+**Der Katalog liegt als Textdatei bei, nicht als fertige Datenbank.** 2,8 MB TSV statt
 mehrerer Megabyte SQLite, und beim Einlesen wird der Suchindex passend zur eingebauten
 Normalisierung neu aufgebaut. Der Aufbau kostet einmalig wenige Sekunden.
 
@@ -95,8 +96,8 @@ ob gepackte oder ungepackte Daten vorliegen, statt sich auf eine Variante zu ver
 Warengruppen-Import holt „Milch aus Deutschland" und trifft K-Classic nur zufällig mit. Für
 ein Sortiment, das zu großen Teilen aus Eigenmarken besteht, ist das die falsche Achse:
 gefragt wird deshalb nach `brands_tags` — K-Classic, K-Bio, K-take it veggie, K-Free,
-K-Favourites, K-to go, K-Purland, Purland, Bevola, exquisit — und zwar in allen vier
-Datenbanken der Open-Food-Facts-Familie. Toilettenpapier, Duschgel und Katzenfutter stehen
+K-Favourites, K-to go, K-Purland, Purland, Bevola, exquisit — und zwar in allen Quellen der
+Open-Food-Facts-Familie. Toilettenpapier, Duschgel und Katzenfutter stehen
 nicht in Open Food Facts, sondern in Open Beauty Facts, Open Products Facts und Open Pet
 Food Facts; sie sprechen dieselbe API unter anderer Adresse. Ohne sie fehlte der halbe
 Drogerie- und Tierbedarfsteil der Marke.
