@@ -317,19 +317,17 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         )
     }
 
-    suspend fun gaenge(): Abruf<List<Gang>> {
-        val zeilen = artikelDao.gaenge(STANDARD_MARKT)
-
-        return Abruf.Erfolg(
+    fun gaenge(): Flow<List<Gang>> =
+        artikelDao.gaenge(STANDARD_MARKT).map { zeilen ->
             zeilen
                 .map { Gang(it.gang, it.anzahl) }
                 // "2" vor "10": numerische Gänge nicht alphabetisch sortieren.
                 .sortedWith(compareBy({ it.gang.toIntOrNull() ?: Int.MAX_VALUE }, { it.gang }))
-        )
-    }
+        }
 
-    suspend fun artikelImGang(gang: String): Abruf<List<Artikel>> =
-        Abruf.Erfolg(artikelDao.imGang(gang, STANDARD_MARKT).map { it.zuModell() })
+    /** Wie die Trefferliste beobachtend — der Gang bleibt beim Sprung in die Detailseite stehen. */
+    fun artikelImGang(gang: String): Flow<List<Artikel>> =
+        artikelDao.imGang(gang, STANDARD_MARKT).map { liste -> liste.map { it.zuModell() } }
 
     suspend fun markt(): Abruf<Markt> {
         val markt = stammdatenDao.maerkte().firstOrNull()

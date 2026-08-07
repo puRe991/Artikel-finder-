@@ -165,8 +165,9 @@ interface ArtikelDao {
     )
     fun zuletztBearbeitet(marktId: Int, grenze: Int = 50): Flow<List<ArtikelMitStand>>
 
+    /** Beobachtend, damit ein auf der Detailseite erfasster Preis im Gang sofort steht. */
     @Query("$AKTUELLER_STAND WHERE s.gang = :gang ORDER BY a.name COLLATE NOCASE")
-    suspend fun imGang(gang: String, marktId: Int): List<ArtikelMitStand>
+    fun imGang(gang: String, marktId: Int): Flow<List<ArtikelMitStand>>
 
     @Query(
         """
@@ -177,7 +178,7 @@ interface ArtikelDao {
         GROUP BY s.gang
         """
     )
-    suspend fun gaenge(marktId: Int): List<GangZeile>
+    fun gaenge(marktId: Int): Flow<List<GangZeile>>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun einfuegen(artikel: ArtikelEintrag)

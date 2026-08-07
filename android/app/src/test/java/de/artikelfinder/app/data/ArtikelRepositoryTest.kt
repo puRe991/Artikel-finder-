@@ -187,9 +187,9 @@ class ArtikelRepositoryTest {
         val artikel = repository.anlegen(name = "Vollmilch", gang = "7").erfolg()
         repository.standortErfassen(artikel.artikel.id, gang = "3")
 
-        assertTrue(repository.artikelImGang("7").erfolg().isEmpty())
-        assertEquals(1, repository.artikelImGang("3").erfolg().size)
-        assertEquals(listOf("3"), repository.gaenge().erfolg().map { it.gang })
+        assertTrue(repository.artikelImGang("7").first().isEmpty())
+        assertEquals(1, repository.artikelImGang("3").first().size)
+        assertEquals(listOf("3"), repository.gaenge().first().map { it.gang })
     }
 
     @Test
@@ -198,7 +198,18 @@ class ArtikelRepositoryTest {
         repository.anlegen(name = "B", gang = "10")
         repository.anlegen(name = "C", gang = "1")
 
-        assertEquals(listOf("1", "2", "10"), repository.gaenge().erfolg().map { it.gang })
+        assertEquals(listOf("1", "2", "10"), repository.gaenge().first().map { it.gang })
+    }
+
+    @Test
+    fun `Beobachtete Gangliste zeigt einen nachtraeglich erfassten Preis`() = runTest {
+        // Derselbe Weg wie in der Suche: der Gang bleibt stehen, erfasst wird nebenan.
+        val artikel = repository.anlegen(name = "Gangartikel", gang = "4").erfolg()
+        assertNull(repository.artikelImGang("4").first().single().preis)
+
+        repository.preisErfassen(artikel.artikel.id, 3.99)
+
+        assertEquals(3.99, repository.artikelImGang("4").first().single().preis!!.preis, 0.001)
     }
 
     @Test
