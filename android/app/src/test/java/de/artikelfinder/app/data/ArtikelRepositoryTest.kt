@@ -3,8 +3,13 @@ package de.artikelfinder.app.data
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import de.artikelfinder.app.data.local.ArtikelDatenbank
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -73,6 +78,29 @@ class ArtikelRepositoryTest {
             val text = Suchtext.normalisieren("${treffer.name} ${treffer.marke.orEmpty()}")
             text.contains("bio") && text.contains("milch")
         })
+    }
+
+    /**
+     * Der gemeldete Fehler in Reinform: die Trefferliste bleibt offen stehen — wie der
+     * Suchbildschirm im Rücken-Stapel — während nebenan ein Preis erfasst wird. Bewusst
+     * `runBlocking` statt `runTest`: Room meldet die Änderung über eigene Threads, die
+     * virtuelle Zeit von `runTest` würde die Wartezeit überspringen.
+     */
+    @Test
+    fun `Offen stehende Trefferliste zieht einen erfassten Preis nach`() = runBlocking {
+        val artikel = repository.anlegen(name = "Livetest", ean = FREIE_EAN).erfolg()
+
+        val gesehen = Channel<Double?>(Channel.UNLIMITED)
+        val beobachter = launch(Dispatchers.IO) {
+            repository.suchenLive("Livetest").collect { gesehen.send(it.single().preis?.preis) }
+        }
+
+        assertNull("Vor der Erfassung hat der Artikel keinen Preis", withTimeout(10_000) { gesehen.receive() })
+
+        repository.preisErfassen(artikel.artikel.id, 2.49)
+
+        assertEquals(2.49, withTimeout(10_000) { gesehen.receive() }!!, 0.001)
+        beobachter.cancel()
     }
 
     @Test
