@@ -5,13 +5,17 @@ import de.artikelfinder.app.data.Katalogaufbau.Companion.STANDARD_MARKT
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.ArtikelMitStand
+import de.artikelfinder.app.data.local.MerkpostenEintrag
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
@@ -38,6 +42,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     private val standortDao get() = datenbank.standortDao()
     private val verlaufDao get() = datenbank.verlaufDao()
     private val stammdatenDao get() = datenbank.stammdatenDao()
+    private val merkpostenDao get() = datenbank.merkpostenDao()
 
     /** Laufende Angebote, das am schnellsten ablaufende zuerst. */
     fun aktiveAngebote(): Flow<List<Artikel>> =
@@ -49,15 +54,82 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
      * Zeitraum fuer jedes Angebot; ihn 40-mal einzugeben waere die eigentliche Arbeit.
      */
     suspend fun letztesAktionsende(): Long? =
-        datenbank.merkpostenDao().lesen(MERKPOSTEN_AKTIONSENDE)?.toLongOrNull()
+        merkpostenDao.lesen(MERKPOSTEN_AKTIONSENDE)?.toLongOrNull()
 
     suspend fun aktionsendeMerken(zeitpunkt: Long) =
-        datenbank.merkpostenDao().schreiben(
-            de.artikelfinder.app.data.local.MerkpostenEintrag(MERKPOSTEN_AKTIONSENDE, zeitpunkt.toString())
+        merkpostenDao.schreiben(
+            MerkpostenEintrag(MERKPOSTEN_AKTIONSENDE, zeitpunkt.toString())
         )
 
     fun zuletztBearbeitet(): Flow<List<Artikel>> =
         artikelDao.zuletztBearbeitet(STANDARD_MARKT).map { liste -> liste.map { it.zuModell() } }
+
+    /** Ueberschreibbar, damit Tests den Tageswechsel nachstellen koennen. */
+    var heutigerTag: () -> Long = {
+        Instant.ofEpochMilli(System.currentTimeMillis())
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
+            .toEpochDay()
+    }
+
+    /**
+     * Ein Artikel pro Tag zum Nachprüfen von Preis und Standort.
+     *
+     * Gezogen wird aus dem gesamten Katalog. Die Wahl bleibt gespeichert, damit derselbe Tag
+     * denselben Artikel zeigt — auch wenn die App zwischendurch geschlossen war. Der Artikel
+     * selbst wird beobachtet: erfasst man unterwegs den Preis, steht er sofort auf der Karte.
+     */
+    fun tagesaufgabe(): Flow<Tagesaufgabe?> = flow {
+        val heute = heutigerTag()
+        val artikelId = tagesartikelZiehen(heute)
+
+        if (artikelId == null) {
+            // Kein einziger Artikel im Katalog — vor dem ersten Aufbau.
+            emit(null)
+            return@flow
+        }
+
+        emitAll(
+            combine(
+                artikelDao.beobachten(artikelId, STANDARD_MARKT),
+                merkpostenDao.beobachten(MERKPOSTEN_TAGESAUFGABE_ERLEDIGT),
+            ) { stand, erledigtAm ->
+                stand?.let {
+                    Tagesaufgabe(
+                        artikel = it.zuModell(),
+                        erledigt = erledigtAm?.toLongOrNull() == heute,
+                    )
+                }
+            }
+        )
+    }
+
+    suspend fun tagesaufgabeErledigen() = merkpostenDao.schreiben(
+        MerkpostenEintrag(
+            MERKPOSTEN_TAGESAUFGABE_ERLEDIGT,
+            heutigerTag().toString(),
+        )
+    )
+
+    /** Die heutige Wahl, oder eine frische, wenn der Tag gewechselt hat. */
+    private suspend fun tagesartikelZiehen(heute: Long): String? {
+        val gemerkterTag = merkpostenDao.lesen(MERKPOSTEN_TAGESAUFGABE_TAG)?.toLongOrNull()
+        val gemerkterArtikel = merkpostenDao.lesen(MERKPOSTEN_TAGESAUFGABE_ARTIKEL)
+
+        // Auch pruefen, ob es den Artikel noch gibt — geloescht wird er sonst zur leeren Karte.
+        if (gemerkterTag == heute && gemerkterArtikel != null && artikelDao.roh(gemerkterArtikel) != null) {
+            return gemerkterArtikel
+        }
+
+        val gezogen = artikelDao.zufaelligeId() ?: return null
+        merkpostenDao.schreiben(
+            MerkpostenEintrag(MERKPOSTEN_TAGESAUFGABE_TAG, heute.toString())
+        )
+        merkpostenDao.schreiben(
+            MerkpostenEintrag(MERKPOSTEN_TAGESAUFGABE_ARTIKEL, gezogen)
+        )
+        return gezogen
+    }
 
     suspend fun suchen(
         suchbegriff: String?,
@@ -477,6 +549,9 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
 
     private companion object {
         const val MERKPOSTEN_AKTIONSENDE = "aktionsende"
+        const val MERKPOSTEN_TAGESAUFGABE_TAG = "tagesaufgabe_tag"
+        const val MERKPOSTEN_TAGESAUFGABE_ARTIKEL = "tagesaufgabe_artikel"
+        const val MERKPOSTEN_TAGESAUFGABE_ERLEDIGT = "tagesaufgabe_erledigt"
     }
 }
 

@@ -48,6 +48,15 @@ data class Standort(
     val erfasstVon: String? = null,
 )
 
+/**
+ * Der Artikel, den die App heute zum Nachprüfen vorschlägt. Einmal am Tag gezogen und bis
+ * Mitternacht derselbe — sonst wäre es keine Aufgabe, sondern ein Zufallsgenerator.
+ */
+data class Tagesaufgabe(
+    val artikel: Artikel,
+    val erledigt: Boolean,
+)
+
 data class Kategorie(
     val id: Int,
     val name: String,

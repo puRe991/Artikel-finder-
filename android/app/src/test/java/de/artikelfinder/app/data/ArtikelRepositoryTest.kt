@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -137,6 +138,63 @@ class ArtikelRepositoryTest {
             liste.any { it.id == katalogartikel.id },
         )
         assertEquals(1.09, liste.first { it.id == katalogartikel.id }.preis!!.preis, 0.001)
+    }
+
+    @Test
+    fun `Der Artikel des Tages bleibt denselben Tag ueber derselbe`() = runTest {
+        repository.heutigerTag = { 20_000 }
+
+        val ersterAufruf = repository.tagesaufgabe().first()!!.artikel.id
+        // Zweiter Aufruf steht fuer den naechsten App-Start am selben Tag.
+        val zweiterAufruf = repository.tagesaufgabe().first()!!.artikel.id
+
+        assertEquals(ersterAufruf, zweiterAufruf)
+    }
+
+    @Test
+    fun `Jeder Tag zieht neu`() = runTest {
+        val gezogen = (20_000L..20_004L).map { tag ->
+            repository.heutigerTag = { tag }
+            repository.tagesaufgabe().first()!!.artikel.id
+        }
+
+        // Bei ueber 15.000 Artikeln waeren fuenf gleiche Ziehungen praktisch ausgeschlossen.
+        assertTrue("Fuenfmal derselbe Artikel: es wird nicht neu gezogen", gezogen.toSet().size > 1)
+    }
+
+    @Test
+    fun `Erledigt gilt nur fuer den laufenden Tag`() = runTest {
+        repository.heutigerTag = { 20_000 }
+        assertFalse(repository.tagesaufgabe().first()!!.erledigt)
+
+        repository.tagesaufgabeErledigen()
+        assertTrue(repository.tagesaufgabe().first()!!.erledigt)
+
+        repository.heutigerTag = { 20_001 }
+        assertFalse("Am naechsten Tag steht die Aufgabe wieder offen", repository.tagesaufgabe().first()!!.erledigt)
+    }
+
+    @Test
+    fun `Der Artikel des Tages zeigt einen erfassten Preis`() = runTest {
+        repository.heutigerTag = { 20_000 }
+        val artikelId = repository.tagesaufgabe().first()!!.artikel.id
+        assertNull(repository.tagesaufgabe().first()!!.artikel.preis)
+
+        repository.preisErfassen(artikelId, 1.79)
+
+        assertEquals(1.79, repository.tagesaufgabe().first()!!.artikel.preis!!.preis, 0.001)
+    }
+
+    @Test
+    fun `Ein geloeschter Tagesartikel wird ersetzt`() = runTest {
+        repository.heutigerTag = { 20_000 }
+        val artikelId = repository.tagesaufgabe().first()!!.artikel.id
+
+        repository.loeschen(artikelId)
+
+        val ersatz = repository.tagesaufgabe().first()
+        assertNotNull("Statt einer leeren Karte gehoert ein neuer Artikel her", ersatz)
+        assertTrue(ersatz!!.artikel.id != artikelId)
     }
 
     @Test

@@ -7,6 +7,7 @@ import de.artikelfinder.app.data.Abruf
 import de.artikelfinder.app.data.Artikel
 import de.artikelfinder.app.data.ArtikelRepository
 import de.artikelfinder.app.data.Kategorie
+import de.artikelfinder.app.data.Tagesaufgabe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +34,8 @@ data class SucheZustand(
     val kategorien: List<Kategorie> = emptyList(),
     val gewaehlteKategorieId: Int? = null,
     val nurMitWerbepreis: Boolean = false,
+    /** Der Artikel, den die App heute zum Nachprüfen vorschlägt. */
+    val tagesaufgabe: Tagesaufgabe? = null,
     val laedt: Boolean = false,
     val fehler: String? = null,
 ) {
@@ -103,6 +106,12 @@ class SucheViewModel @Inject constructor(
             .onEach { liste -> _zustand.value = _zustand.value.copy(zuletztBearbeitet = liste) }
             .launchIn(viewModelScope)
 
+        repository.tagesaufgabe()
+            .onEach { aufgabe -> _zustand.value = _zustand.value.copy(tagesaufgabe = aufgabe) }
+            // Ohne Tagesaufgabe bleibt die Karte einfach weg — die Suche funktioniert weiter.
+            .catch { _zustand.value = _zustand.value.copy(tagesaufgabe = null) }
+            .launchIn(viewModelScope)
+
         viewModelScope.launch {
             when (val ergebnis = repository.kategorien()) {
                 is Abruf.Erfolg -> _zustand.value = _zustand.value.copy(kategorien = ergebnis.wert)
@@ -130,6 +139,10 @@ class SucheViewModel @Inject constructor(
 
     fun aktualisieren() {
         filter.value = filter.value.copy(versuch = filter.value.versuch + 1)
+    }
+
+    fun tagesaufgabeErledigt() {
+        viewModelScope.launch { repository.tagesaufgabeErledigen() }
     }
 
     private fun trefferstrom(auftrag: Suchauftrag): Flow<Trefferstand> {

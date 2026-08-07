@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.artikelfinder.app.data.Tagesaufgabe
 import de.artikelfinder.app.ui.komponenten.ArtikelKarte
 import de.artikelfinder.app.ui.komponenten.FehlerAnzeige
 import de.artikelfinder.app.ui.komponenten.LeerAnzeige
@@ -117,6 +118,15 @@ fun SucheBildschirm(
                         leerHinweis = "Suche nach einem Namen oder scanne einen Barcode. "
                             + "Preise und Gänge trägst du beim Einkaufen selbst ein.",
                         beiArtikel = beiArtikel,
+                        kopf = zustand.tagesaufgabe?.let { aufgabe ->
+                            {
+                                TagesaufgabeKarte(
+                                    aufgabe = aufgabe,
+                                    beiArtikel = beiArtikel,
+                                    beiErledigt = viewModel::tagesaufgabeErledigt,
+                                )
+                            }
+                        },
                     )
 
                     else -> Trefferliste(
@@ -168,6 +178,57 @@ private fun Filterleiste(zustand: SucheZustand, viewModel: SucheViewModel) {
     }
 }
 
+/**
+ * Der Artikel des Tages. Gezogen wird aus dem gesamten Katalog, deshalb hat er meistens noch
+ * keinen Preis — die Karte sagt das offen, statt eine leere Zeile zu zeigen.
+ */
+@Composable
+private fun TagesaufgabeKarte(
+    aufgabe: Tagesaufgabe,
+    beiArtikel: (String) -> Unit,
+    beiErledigt: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "Artikel des Tages",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        Text(
+            text = when {
+                aufgabe.erledigt -> "Für heute erledigt. Morgen kommt der nächste."
+                aufgabe.artikel.preis == null && aufgabe.artikel.standort == null ->
+                    "Noch nichts erfasst — trag Preis und Gang ein, wenn du daran vorbeikommst."
+                else -> "Stimmen Preis und Gang noch? Tippe drauf, um sie nachzutragen."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        ArtikelKarte(
+            artikel = aufgabe.artikel,
+            beiKlick = { beiArtikel(aufgabe.artikel.id) },
+        )
+
+        if (!aufgabe.erledigt) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                androidx.compose.material3.TextButton(onClick = beiErledigt) {
+                    Text("Erledigt")
+                }
+            }
+        }
+
+        androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
 @Composable
 private fun Trefferliste(
     titel: String?,
@@ -176,9 +237,12 @@ private fun Trefferliste(
     leerHinweis: String?,
     beiArtikel: (String) -> Unit,
     beiAnlegen: (() -> Unit)? = null,
+    /** Steht über der Liste — und auch dann, wenn die Liste leer ist. */
+    kopf: (@Composable () -> Unit)? = null,
 ) {
     if (artikel.isEmpty()) {
-        Column {
+        Column(modifier = Modifier.padding(16.dp)) {
+            kopf?.invoke()
             LeerAnzeige(titel = leerTitel, hinweis = leerHinweis)
             beiAnlegen?.let {
                 Row(
@@ -199,6 +263,8 @@ private fun Trefferliste(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        kopf?.let { item { it() } }
+
         titel?.let {
             item {
                 Text(

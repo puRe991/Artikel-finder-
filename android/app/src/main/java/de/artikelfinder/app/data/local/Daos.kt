@@ -63,6 +63,14 @@ interface ArtikelDao {
     @Query("$AKTUELLER_STAND WHERE a.id = :id")
     suspend fun holen(id: String, marktId: Int): ArtikelMitStand?
 
+    /** Beobachtend — die Tagesaufgabe zeigt einen erfassten Preis sofort. */
+    @Query("$AKTUELLER_STAND WHERE a.id = :id")
+    fun beobachten(id: String, marktId: Int): Flow<ArtikelMitStand?>
+
+    /** Zieht einen beliebigen Katalogartikel. Läuft einmal am Tag, der Vollscan ist egal. */
+    @Query("SELECT id FROM artikel ORDER BY RANDOM() LIMIT 1")
+    suspend fun zufaelligeId(): String?
+
     @Query("$AKTUELLER_STAND WHERE a.ean = :ean LIMIT 1")
     suspend fun perEan(ean: String, marktId: Int): ArtikelMitStand?
 
@@ -252,6 +260,9 @@ interface VerlaufDao {
 interface MerkpostenDao {
     @Query("SELECT wert FROM merkposten WHERE schluessel = :schluessel")
     suspend fun lesen(schluessel: String): String?
+
+    @Query("SELECT wert FROM merkposten WHERE schluessel = :schluessel")
+    fun beobachten(schluessel: String): Flow<String?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun schreiben(eintrag: MerkpostenEintrag)
