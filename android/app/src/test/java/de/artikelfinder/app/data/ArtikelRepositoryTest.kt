@@ -291,6 +291,33 @@ class ArtikelRepositoryTest {
     }
 
     @Test
+    fun `Der ausgelieferte Katalog bringt die Auskunft mit`() = runTest {
+        // Gegen die echte Katalogdatei, nicht gegen eine Attrappe: ein Export ohne
+        // vorherige Anreicherung wuerde die App still auf den Stand von vorher zuruecksetzen.
+        val alle = datenbank.artikelDao().suchen(
+            0, "%", "%", "%", emptyList(), 0, 0, 0, 1, null, 0, maerkte.aktuelleId(), 20_000, 0,
+        )
+
+        val mitAllergenen = alle.count { it.artikel.allergene != null }
+        val mitZutaten = alle.count { it.artikel.zutaten != null }
+        val mitNaehrwerten = alle.count { it.artikel.naehrwerte != null }
+
+        assertTrue("Nur $mitAllergenen Artikel mit Allergenen", mitAllergenen > 5_000)
+        assertTrue("Nur $mitZutaten Artikel mit Zutaten", mitZutaten > 10_000)
+        assertTrue("Nur $mitNaehrwerten Artikel mit Naehrwerten", mitNaehrwerten > 12_000)
+
+        // Und die Positivliste haelt: kein roher Tag darf durchgerutscht sein.
+        val allergene = alle.mapNotNull { it.artikel.allergene }
+            .flatMap { it.split(", ") }
+            .toSet()
+        assertTrue(
+            "Unerwartete Allergenbezeichnungen: ${allergene.filter { it.startsWith("en:") }}",
+            allergene.none { it.startsWith("en:") },
+        )
+        assertTrue("Milch fehlt in den Allergenen", allergene.contains("Milch"))
+    }
+
+    @Test
     fun `Die Markenzuordnung greift im echten Katalog`() = runTest {
         // Am ausgelieferten Katalog, nicht an einer Attrappe: die Schreibweisen dort sind
         // der eigentliche Gegner. Allein K-Classic steht in sechs Fassungen darin.

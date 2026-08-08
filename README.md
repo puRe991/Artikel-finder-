@@ -8,7 +8,7 @@ Beim ersten Start wählst du deinen Markt — Kaufland, Rewe, Aldi, Lidl, Edeka,
 Dutzend weitere. Mehrere Märkte lassen sich nebeneinander führen und umschalten.
 
 **Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
-Der Artikelkatalog — gut 19.000 reale Produkte aus
+Der Artikelkatalog — 19.317 reale Produkte aus
 [Open Food Facts](https://world.openfoodfacts.org/data) und seinen Schwesterdatenbanken,
 darunter 4.261 Kaufland-Eigenmarkenartikel (K-Classic, K-Bio, Purland, Bevola …) — liegt in
 der App und wird beim ersten Start in die geräteeigene Datenbank geschrieben. Preise und
@@ -29,7 +29,7 @@ android/                              Die App — Kotlin, Jetpack Compose, Room
     data/Angabenleser.kt              Allergene, Nährwerte und Zutaten fürs Anzeigemodell
     data/sicherung/                   Sicherungsdatei der eigenen Erfassungen
     ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | markt | sicherung
-  app/src/test/                       75 Tests gegen echtes SQLite (Robolectric)
+  app/src/test/                       80 Tests gegen echtes SQLite (Robolectric)
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
@@ -51,7 +51,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew :app:testDebugUnitTest   # 75 Tests
+./gradlew :app:testDebugUnitTest   # 80 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -105,7 +105,7 @@ ist idempotent (Abgleich über EAN).
 
 ## Entwurfsentscheidungen
 
-**Der Katalog liegt als Textdatei bei, nicht als fertige Datenbank.** 2,8 MB TSV statt
+**Der Katalog liegt als Textdatei bei, nicht als fertige Datenbank.** 7,3 MB TSV statt
 mehrerer Megabyte SQLite, und beim Einlesen wird der Suchindex passend zur eingebauten
 Normalisierung neu aufgebaut. Der Aufbau kostet einmalig wenige Sekunden.
 
@@ -216,7 +216,20 @@ Der gewählte Markt entscheidet über zwei Dinge:
 
 ## Artikelauskunft
 
-Zu jedem Artikel zeigt die App, was Open Food Facts hergibt:
+Zu jedem Artikel zeigt die App, was Open Food Facts hergibt. Im ausgelieferten Katalog
+(19.317 Artikel) sind das:
+
+| Angabe | Artikel | Anteil |
+|---|---:|---:|
+| Füllmenge | 17.303 | 89 % |
+| Nährwerte | 15.500 | 80 % |
+| Nutri-Score | 13.483 | 69 % |
+| Zutaten | 13.439 | 69 % |
+| Allergene | 7.774 | 40 % |
+| Auszeichnungen | 6.128 | 31 % |
+| „Kann Spuren enthalten" | 4.589 | 23 % |
+
+Im Einzelnen:
 
 - **Allergene** und „kann Spuren enthalten von" — die Frage, die am Regal am häufigsten
   gestellt wird.
@@ -272,7 +285,7 @@ Fehlt ein Schritt, schlägt der Test fehl — statt der App beim nächsten Updat
 ## Tests
 
 ```bash
-cd android && ./gradlew :app:testDebugUnitTest   # 75 Tests
+cd android && ./gradlew :app:testDebugUnitTest   # 80 Tests
 cd backend && dotnet test                        # 96 Tests
 ```
 
