@@ -17,17 +17,21 @@ Preis- und Standorterfassung funktionieren vollständig offline.
 
 ```
 android/                              Die App — Kotlin, Jetpack Compose, Room
+  app/schemas/                        Die exportierten Datenbankschemata, je Version eins
   app/src/main/assets/                Der ausgelieferte Artikelkatalog
   app/src/main/java/de/artikelfinder/app/
     data/                             Room-Datenbank, Repository, Katalogaufbau
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote
-  app/src/test/                       31 Tests gegen echtes SQLite (Robolectric)
+    data/sicherung/                   Sicherungsdatei der eigenen Erfassungen
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | sicherung
+  app/src/test/                       49 Tests gegen echtes SQLite (Robolectric)
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
   src/ArtikelFinder.Api/              Datenmodell und Web-API für Phase 3 (Mehrbenutzer)
   daten/katalog-seed.tsv.gz           Quelle des Katalogs in der App
   tests/                              79 Tests
+
+.github/workflows/ci.yml              Baut die App und fährt beide Testsätze bei jedem Push
 ```
 
 Das Backend wird für den Betrieb der App **nicht** gebraucht. Es bleibt im Projekt, weil es
@@ -41,7 +45,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew test                 # 31 Tests
+./gradlew :app:testDebugUnitTest   # 49 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -123,6 +127,14 @@ falschen Gang.
 Anfang an in beiden Tabellen. Der Ausbau auf weitere Filialen kostet damit keine
 Datenmigration.
 
+**Die Sicherung bezieht sich auf die EAN, nicht auf die Artikel-Id.** Der Katalogaufbau
+vergibt bei jeder Installation neue Ids — eine Sicherung, die daran hinge, wäre auf einem
+zweiten Gerät wertlos, und genau dafür macht man eine. Selbst angelegte Artikel haben oft
+keine EAN; sie behalten deshalb ihre Id und werden mit ihr wieder angelegt. Das macht das
+Einlesen nebenbei wiederholbar: jeder Datensatz bringt seinen Schlüssel mit, ein zweiter
+Lauf derselben Datei ändert nichts. Der Katalog selbst steht nicht in der Datei — er liegt
+in der App.
+
 **Erfassungen werden angehängt, nie überschrieben.** Der jüngste Eintrag pro
 (Artikel, Markt) ist der aktuelle. Die Preishistorie und der „steht jetzt in Gang 3
 statt 7"-Fall fallen dadurch ohne Zusatztabelle ab; der Änderungsverlauf hält zusätzlich
@@ -146,12 +158,38 @@ hintereinander. Bei verknitterten Etiketten sind Einzelbild-Fehlerkennungen häu
 falscher Barcode führt direkt zum falschen Artikel. Die Auswertung läuft über ML Kit
 vollständig auf dem Gerät.
 
+## Sicherung
+
+Die eigenen Erfassungen lassen sich über *Weitere Aktionen → Sicherung* in eine Textdatei
+schreiben und wieder einlesen. Die Datei landet über die Dateiauswahl des Systems dort, wo
+du sie wiederfindest — die App braucht dafür kein Speicherrecht.
+
+Einlesen **ergänzt** und löscht nichts. Dieselbe Datei zweimal einzulesen ändert nichts,
+weil jeder Datensatz seine Id mitbringt.
+
+## Datenbank ändern
+
+Die Datenbank enthält selbst erfasste Daten, also gibt es keinen Neuaufbau bei
+Schemawechseln. Beim Ändern einer Entität:
+
+1. Entität ändern und `ArtikelDatenbank.VERSION` erhöhen.
+2. Einmal bauen — Room legt `android/app/schemas/…/<Version>.json` an. Die Datei gehört
+   mit ins Repository.
+3. In `Migrationen.kt` den Schritt von der Vorgängerversion ergänzen.
+
+`MigrationTest` baut die älteste Datenbank aus der eingecheckten Schemabeschreibung nach,
+legt erfasste Preise und Standorte hinein und lässt Room die Migrationen darüber laufen.
+Fehlt ein Schritt, schlägt der Test fehl — statt der App beim nächsten Update auf dem Handy.
+
 ## Tests
 
 ```bash
-cd android && ./gradlew test       # 31 Tests
-cd backend && dotnet test          # 79 Tests
+cd android && ./gradlew :app:testDebugUnitTest   # 49 Tests
+cd backend && dotnet test                        # 79 Tests
 ```
+
+`./gradlew test` fährt dieselben App-Tests zusätzlich gegen `release` und `dist` und
+verdreifacht die Laufzeit ohne neue Erkenntnis; die CI nimmt deshalb nur `debug`.
 
 Die App-Tests laufen unter Robolectric gegen echtes SQLite und lesen die tatsächlich
 ausgelieferte Katalogdatei über den Asset-Manager ein — nicht über den Quellbaum. Genau
@@ -167,14 +205,13 @@ dieser Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
   bereits an und hebt „läuft heute/morgen ab" hervor; es fehlt der Hintergrundjob, der von
   sich aus meldet.
 - Prospektdaten als Datei einlesen, statt jedes Angebot einzeln zu erfassen.
-- Sicherung der eigenen Erfassungen (Export/Import), damit ein Gerätewechsel sie nicht
-  verliert.
+- Einkaufsliste, nach Gang sortiert — die Gangdaten liegen bereits vor.
+- Volltextsuche (FTS) mit Rangfolge. Die Suche läuft heute über `LIKE '%…%'`, das führende
+  Platzhalterzeichen macht den Index auf `suchtext` wirkungslos.
 
 **Phase 3**
 - Mehrbenutzerbetrieb über das Backend. `erfasst_von` ist heute Freitext und würde zur
   Nutzer-Id.
-- Room-Migration statt Neuaufbau, sobald sich das Schema ändert — die Datenbank enthält
-  dann selbst erfasste Daten.
 
 ## Rechtliches
 

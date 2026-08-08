@@ -1,0 +1,501 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "8d93351d13cf64fd85190342615fc787",
+    "entities": [
+      {
+        "tableName": "artikel",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `suchtext` TEXT NOT NULL, `marke` TEXT, `ean` TEXT, `artikelnummer` TEXT, `kategorie_id` INTEGER, `bild_url` TEXT, `erstellt_von` TEXT NOT NULL, `erstellt_am` INTEGER NOT NULL, `geaendert_am` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suchtext",
+            "columnName": "suchtext",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "marke",
+            "columnName": "marke",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ean",
+            "columnName": "ean",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "artikelnummer",
+            "columnName": "artikelnummer",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "kategorieId",
+            "columnName": "kategorie_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "bildUrl",
+            "columnName": "bild_url",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "erstelltVon",
+            "columnName": "erstellt_von",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "erstelltAm",
+            "columnName": "erstellt_am",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geaendertAm",
+            "columnName": "geaendert_am",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_artikel_ean",
+            "unique": true,
+            "columnNames": [
+              "ean"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_artikel_ean` ON `${TABLE_NAME}` (`ean`)"
+          },
+          {
+            "name": "index_artikel_suchtext",
+            "unique": false,
+            "columnNames": [
+              "suchtext"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_artikel_suchtext` ON `${TABLE_NAME}` (`suchtext`)"
+          },
+          {
+            "name": "index_artikel_kategorie_id",
+            "unique": false,
+            "columnNames": [
+              "kategorie_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_artikel_kategorie_id` ON `${TABLE_NAME}` (`kategorie_id`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "kategorie",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `parent_id` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentId",
+            "columnName": "parent_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_kategorie_parent_id",
+            "unique": false,
+            "columnNames": [
+              "parent_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kategorie_parent_id` ON `${TABLE_NAME}` (`parent_id`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "markt",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `kette` TEXT NOT NULL, `ort` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kette",
+            "columnName": "kette",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ort",
+            "columnName": "ort",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "preis",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `artikel_id` TEXT NOT NULL, `markt_id` INTEGER NOT NULL, `wert` REAL NOT NULL, `werbepreis` REAL, `werbepreis_von` INTEGER, `werbepreis_bis` INTEGER, `erfasst_am` INTEGER NOT NULL, `erfasst_von` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`artikel_id`) REFERENCES `artikel`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artikelId",
+            "columnName": "artikel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "marktId",
+            "columnName": "markt_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wert",
+            "columnName": "wert",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "werbepreis",
+            "columnName": "werbepreis",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "werbepreisVon",
+            "columnName": "werbepreis_von",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "werbepreisBis",
+            "columnName": "werbepreis_bis",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "erfasstAm",
+            "columnName": "erfasst_am",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "erfasstVon",
+            "columnName": "erfasst_von",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_preis_artikel_id_markt_id_erfasst_am",
+            "unique": false,
+            "columnNames": [
+              "artikel_id",
+              "markt_id",
+              "erfasst_am"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_preis_artikel_id_markt_id_erfasst_am` ON `${TABLE_NAME}` (`artikel_id`, `markt_id`, `erfasst_am`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "artikel",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "artikel_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "standort",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `artikel_id` TEXT NOT NULL, `markt_id` INTEGER NOT NULL, `gang` TEXT NOT NULL, `regal_beschreibung` TEXT, `karten_x` REAL, `karten_y` REAL, `erfasst_am` INTEGER NOT NULL, `erfasst_von` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`artikel_id`) REFERENCES `artikel`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artikelId",
+            "columnName": "artikel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "marktId",
+            "columnName": "markt_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gang",
+            "columnName": "gang",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "regalBeschreibung",
+            "columnName": "regal_beschreibung",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "kartenX",
+            "columnName": "karten_x",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "kartenY",
+            "columnName": "karten_y",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "erfasstAm",
+            "columnName": "erfasst_am",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "erfasstVon",
+            "columnName": "erfasst_von",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_standort_artikel_id_markt_id_erfasst_am",
+            "unique": false,
+            "columnNames": [
+              "artikel_id",
+              "markt_id",
+              "erfasst_am"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_standort_artikel_id_markt_id_erfasst_am` ON `${TABLE_NAME}` (`artikel_id`, `markt_id`, `erfasst_am`)"
+          },
+          {
+            "name": "index_standort_markt_id_gang",
+            "unique": false,
+            "columnNames": [
+              "markt_id",
+              "gang"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_standort_markt_id_gang` ON `${TABLE_NAME}` (`markt_id`, `gang`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "artikel",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "artikel_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "verlauf",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `artikel_id` TEXT NOT NULL, `entitaet` TEXT NOT NULL, `aenderungsart` TEXT NOT NULL, `beschreibung` TEXT NOT NULL, `geaendert_von` TEXT, `geaendert_am` INTEGER NOT NULL, FOREIGN KEY(`artikel_id`) REFERENCES `artikel`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artikelId",
+            "columnName": "artikel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entitaet",
+            "columnName": "entitaet",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aenderungsart",
+            "columnName": "aenderungsart",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "beschreibung",
+            "columnName": "beschreibung",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geaendertVon",
+            "columnName": "geaendert_von",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "geaendertAm",
+            "columnName": "geaendert_am",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_verlauf_artikel_id_geaendert_am",
+            "unique": false,
+            "columnNames": [
+              "artikel_id",
+              "geaendert_am"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_verlauf_artikel_id_geaendert_am` ON `${TABLE_NAME}` (`artikel_id`, `geaendert_am`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "artikel",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "artikel_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "merkposten",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`schluessel` TEXT NOT NULL, `wert` TEXT NOT NULL, PRIMARY KEY(`schluessel`))",
+        "fields": [
+          {
+            "fieldPath": "schluessel",
+            "columnName": "schluessel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wert",
+            "columnName": "wert",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "schluessel"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8d93351d13cf64fd85190342615fc787')"
+    ]
+  }
+}

@@ -157,6 +157,20 @@ interface ArtikelDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun stapelEinfuegen(artikel: List<ArtikelEintrag>)
 
+    /** Selbst angelegte Artikel — nur die gehören in eine Sicherung. */
+    @Query("SELECT * FROM artikel WHERE erstellt_von = :quelle ORDER BY erstellt_am")
+    suspend fun nachQuelle(quelle: String): List<ArtikelEintrag>
+
+    /**
+     * Die EAN zu einer Reihe von Ids. Sie ist der einzige über Geräte hinweg stabile
+     * Schlüssel: die Artikel-Id vergibt der Katalogaufbau bei jeder Installation neu.
+     */
+    @Query("SELECT id, ean FROM artikel WHERE id IN (:ids)")
+    suspend fun eanZuIds(ids: List<String>): List<IdUndEan>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun einfuegenWennNeu(artikel: ArtikelEintrag): Long
+
     /**
      * Laufende Angebote, das am schnellsten ablaufende zuerst. Angebote ohne Enddatum
      * stehen hinten — sie laufen bis auf Weiteres.
@@ -175,6 +189,8 @@ interface ArtikelDao {
 
 data class GangZeile(val gang: String, val anzahl: Int)
 
+data class IdUndEan(val id: String, val ean: String?)
+
 @Dao
 interface PreisDao {
     @Insert
@@ -190,6 +206,17 @@ interface PreisDao {
         """
     )
     suspend fun aktuellster(artikelId: String, marktId: Int): PreisEintrag?
+
+    @Query("SELECT * FROM preis ORDER BY erfasst_am")
+    suspend fun alle(): List<PreisEintrag>
+
+    /**
+     * Beim Einspielen einer Sicherung. Die Id kommt aus der Datei: derselbe Datensatz
+     * zweimal einzuspielen soll nichts verändern, deshalb IGNORE statt REPLACE. Das
+     * Ergebnis sagt je Zeile, ob sie neu war (Zeilennummer) oder schon dastand (-1).
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun einfuegenWennNeu(preise: List<PreisEintrag>): List<Long>
 }
 
 @Dao
@@ -199,6 +226,12 @@ interface StandortDao {
 
     @Query("SELECT * FROM standort WHERE artikel_id = :artikelId ORDER BY erfasst_am DESC")
     suspend fun fuerArtikel(artikelId: String): List<StandortEintrag>
+
+    @Query("SELECT * FROM standort ORDER BY erfasst_am")
+    suspend fun alle(): List<StandortEintrag>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun einfuegenWennNeu(standorte: List<StandortEintrag>): List<Long>
 }
 
 @Dao
@@ -208,6 +241,13 @@ interface VerlaufDao {
 
     @Query("SELECT * FROM verlauf WHERE artikel_id = :artikelId ORDER BY geaendert_am DESC, id DESC")
     suspend fun fuerArtikel(artikelId: String): List<VerlaufEintrag>
+
+    @Query("SELECT * FROM verlauf ORDER BY geaendert_am")
+    suspend fun alle(): List<VerlaufEintrag>
+
+    /** Die Id vergibt die Datenbank; doppelte Einträge fängt der Aufrufer selbst ab. */
+    @Insert
+    suspend fun einfuegen(eintraege: List<VerlaufEintrag>)
 }
 
 @Dao
@@ -217,6 +257,9 @@ interface MerkpostenDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun schreiben(eintrag: MerkpostenEintrag)
+
+    @Query("SELECT * FROM merkposten")
+    suspend fun alle(): List<MerkpostenEintrag>
 }
 
 @Dao

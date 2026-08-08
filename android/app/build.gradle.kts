@@ -19,6 +19,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        ksp {
+            // Room schreibt zu jeder Schemaversion eine JSON-Beschreibung. Sie gehört ins
+            // Repository: ohne sie lässt sich keine Migration schreiben und erst recht
+            // keine testen — die Datenbank enthält selbst erfasste Preise und Standorte.
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
     }
 
     buildTypes {
@@ -66,6 +72,11 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    // Die exportierten Schemata liegen im Klassenpfad der Tests. Der Migrationstest baut
+    // daraus die alte Datenbank nach — deshalb liest er sie hier und nicht aus dem
+    // Quellbaum, dessen Pfad vom Arbeitsverzeichnis des Testlaufs abhinge.
+    sourceSets.getByName("test").resources.srcDir("schemas")
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"

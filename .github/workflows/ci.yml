@@ -1,0 +1,72 @@
+name: CI
+
+# Läuft bei jedem Push. Das Projekt wird auf Feature-Branches entwickelt, die nicht immer
+# einen Pull Request haben — ein Lauf nur auf `main` käme zu spät, um noch zu helfen.
+on:
+  push:
+  workflow_dispatch:
+
+# Ein neuer Push auf denselben Branch macht den vorigen Lauf überflüssig.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App (Kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+
+      # Der Runner bringt das Android-SDK mit; die Zeile stellt nur sicher, dass genau die
+      # Fassungen dabei sind, gegen die gebaut wird. Ist schon alles da, kostet sie Sekunden.
+      - name: Android-SDK ergänzen
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" "build-tools;35.0.0"
+
+      # Bewusst nur die Debug-Variante: `./gradlew test` fährt dieselben Tests zusätzlich
+      # gegen `release` und `dist` und verdreifacht die Laufzeit ohne neue Erkenntnis.
+      - name: Tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+      # Fängt, was Unit-Tests nicht sehen: Manifest, Ressourcen, Verpackung.
+      - name: APK bauen
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Testbericht sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testbericht-app
+          path: android/app/build/reports/tests/
+          retention-days: 7
+
+  backend:
+    name: Backend (.NET)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .NET einrichten
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Tests
+        run: dotnet test backend/ArtikelFinder.sln --nologo

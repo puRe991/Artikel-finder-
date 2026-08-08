@@ -15,8 +15,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -31,6 +34,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -48,9 +54,11 @@ fun SucheBildschirm(
     beiGaengen: () -> Unit,
     beiAngeboten: () -> Unit,
     beiNeuemArtikel: () -> Unit,
+    beiSicherung: () -> Unit,
     viewModel: SucheViewModel = hiltViewModel(),
 ) {
     val zustand by viewModel.zustand.collectAsStateWithLifecycle()
+    var menueOffen by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -62,6 +70,20 @@ fun SucheBildschirm(
                     }
                     IconButton(onClick = beiGaengen) {
                         Icon(Icons.Default.Map, contentDescription = "Gänge")
+                    }
+                    // Alles, was nicht beim Einkaufen gebraucht wird, liegt im Überlauf —
+                    // die Kopfzeile gehört den drei Handgriffen im Laden.
+                    IconButton(onClick = { menueOffen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Weitere Aktionen")
+                    }
+                    DropdownMenu(expanded = menueOffen, onDismissRequest = { menueOffen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Sicherung") },
+                            onClick = {
+                                menueOffen = false
+                                beiSicherung()
+                            },
+                        )
                     }
                 },
             )

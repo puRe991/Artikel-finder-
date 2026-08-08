@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fuer Android 12 und neuer.
+
+  `cloud-backup` ist die Sicherung ins Google-Konto, `device-transfer` der direkte Umzug
+  auf ein neues Handy. Beide bekommen dieselbe Datei: die Datenbank mit den selbst
+  erfassten Preisen und Standorten.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="artikelfinder.db" />
+        <include domain="database" path="artikelfinder.db-wal" />
+        <include domain="database" path="artikelfinder.db-shm" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="artikelfinder.db" />
+        <include domain="database" path="artikelfinder.db-wal" />
+        <include domain="database" path="artikelfinder.db-shm" />
+    </device-transfer>
+</data-extraction-rules>

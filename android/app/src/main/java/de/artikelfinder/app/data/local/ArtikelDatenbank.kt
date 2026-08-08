@@ -13,8 +13,8 @@ import androidx.room.RoomDatabase
         VerlaufEintrag::class,
         MerkpostenEintrag::class,
     ],
-    version = 1,
-    exportSchema = false,
+    version = ArtikelDatenbank.VERSION,
+    exportSchema = true,
 )
 abstract class ArtikelDatenbank : RoomDatabase() {
     abstract fun artikelDao(): ArtikelDao
@@ -23,4 +23,15 @@ abstract class ArtikelDatenbank : RoomDatabase() {
     abstract fun verlaufDao(): VerlaufDao
     abstract fun stammdatenDao(): StammdatenDao
     abstract fun merkpostenDao(): MerkpostenDao
+
+    companion object {
+        /**
+         * Bei jeder Schemaänderung erhöhen — und dazu eine Migration in [MIGRATIONEN]
+         * eintragen. Die Konstante steht hier, damit der Migrationstest gegen dieselbe
+         * Zahl prüfen kann wie die Annotation.
+         */
+        const val VERSION = 1
+
+        const val NAME = "artikelfinder.db"
+    }
 }

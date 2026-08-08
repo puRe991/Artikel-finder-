@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fuer Android 11 und aelter (allowBackup / Auto Backup).
+
+  Gesichert wird die Datenbank: sie enthaelt die selbst erfassten Preise und Standorte.
+  Das automatische Backup ist bequem, aber es haengt an einem Google-Konto, laeuft
+  unsichtbar und laesst sich nicht anstossen — es ersetzt die Sicherungsdatei in der App
+  nicht, es ergaenzt sie.
+-->
+<full-backup-content>
+    <include domain="database" path="artikelfinder.db" />
+    <include domain="database" path="artikelfinder.db-wal" />
+    <include domain="database" path="artikelfinder.db-shm" />
+</full-backup-content>
