@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Vergisst man Schritt 3, schlägt `MigrationTest` fehl — nicht erst das Handy des Nutzers
  * beim nächsten Update.
  */
-val MIGRATIONEN: Array<Migration> = arrayOf(VonEinsAufZwei)
+val MIGRATIONEN: Array<Migration> = arrayOf(VonEinsAufZwei, VonZweiAufDrei)
 
 /**
  * Die Kette, in der es einen Artikel exklusiv gibt.
@@ -41,5 +41,21 @@ private object VonEinsAufZwei : Migration(1, 2) {
         // Bis hierher gab es genau einen Markt, angelegt mit dem Anzeigenamen der Kette.
         // Ab jetzt steht in der Spalte der Schlüssel, über den die Eigenmarken hängen.
         db.execSQL("UPDATE markt SET kette = 'kaufland' WHERE kette = 'Kaufland'")
+    }
+}
+
+/**
+ * Die Angaben, mit denen die App Auskunft gibt: Allergene, Zutaten, Auszeichnungen,
+ * Naehrwerte, Menge, Nutri-Score.
+ *
+ * Nur die Spalten. Gefuellt werden sie aus der mitgelieferten Katalogdatei — die Angaben
+ * kommen mit dem naechsten Katalog, nicht aus dieser Migration. Wer die App aktualisiert,
+ * behaelt seine Preise und Gaenge und bekommt die Auskunft dazu, sobald der Katalog neu
+ * eingelesen wird.
+ */
+private object VonZweiAufDrei : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        listOf("menge", "allergene", "spuren", "auszeichnungen", "naehrwerte", "nutriscore", "zutaten")
+            .forEach { db.execSQL("ALTER TABLE artikel ADD COLUMN $it TEXT") }
     }
 }

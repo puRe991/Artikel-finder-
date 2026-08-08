@@ -155,10 +155,26 @@ private fun Inhalt(
         }
 
         Text(text = artikel.name, style = MaterialTheme.typography.headlineSmall)
-        artikel.marke?.let {
-            Text(text = it, style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            artikel.marke?.let {
+                Text(text = it, style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            artikel.angaben.menge?.let {
+                Text(text = "· $it", style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+
+        Auszeichnungen(artikel.angaben)
+
+        // Vor Preis und Standort: wer im Laden nach Allergenen gefragt wird, soll nicht
+        // erst scrollen muessen.
+        Allergene(artikel.angaben)
 
         InfoKarte {
             Zeile("EAN", artikel.ean ?: "—")
@@ -255,6 +271,16 @@ private fun Inhalt(
 
         OutlinedButton(onClick = beiStandortErfassen, modifier = Modifier.fillMaxWidth()) {
             Text(if (standort == null) "Standort erfassen" else "Standort korrigieren")
+        }
+
+        if (artikel.angaben.zutaten != null) {
+            AbschnittsTitel("Zutaten")
+            Zutaten(artikel.angaben)
+        }
+
+        if (artikel.angaben.naehrwerte.isNotEmpty() || artikel.angaben.nutriscore != null) {
+            AbschnittsTitel("Nährwerte")
+            InfoKarte { Naehrwerte(artikel.angaben) }
         }
 
         if (detail.preise.size > 1) {

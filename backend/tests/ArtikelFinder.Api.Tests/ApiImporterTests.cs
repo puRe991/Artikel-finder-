@@ -185,5 +185,11 @@ public sealed class ApiImporterTests : IAsyncLifetime
                     ? ergebnis
                     : OffSeitenergebnis.Fehlgeschlagen);
         }
+
+        /// <summary>Die Anreicherung spielt in diesen Tests keine Rolle.</summary>
+        public Task<OffSeitenergebnis> AngabenAsync(
+            IReadOnlyCollection<string> codes,
+            CancellationToken ct) =>
+            Task.FromResult(OffSeitenergebnis.Geladen(new OffSuchantwort()));
     }
 }

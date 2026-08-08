@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 
 namespace ArtikelFinder.Import;
 
+using ArtikelFinder.Import.OpenFoodFacts;
+
 /// <summary>
 /// Liest und schreibt den Artikelkatalog als portable Datei.
 ///
@@ -19,7 +21,13 @@ namespace ArtikelFinder.Import;
 /// </summary>
 public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei> log)
 {
-    private const string Kopfzeile = "ean\tname\tmarke\tkategorie\tbildUrl";
+    /// <summary>
+    /// Neue Spalten werden angehaengt, nie eingeschoben: eine aeltere Katalogdatei bleibt
+    /// dadurch lesbar, ihr fehlen einfach die hinteren Felder.
+    /// </summary>
+    private const string Kopfzeile =
+        "ean\tname\tmarke\tkategorie\tbildUrl\tmenge\tallergene\tspuren\tauszeichnungen"
+        + "\tnaehrwerte\tnutriscore\tzutaten";
 
     public async Task<int> SchreibenAsync(string pfad, CancellationToken ct)
     {
@@ -59,7 +67,14 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
                 Saeubern(eintrag.Name),
                 Saeubern(eintrag.Marke),
                 Saeubern(eintrag.Kategorie?.Name),
-                Saeubern(eintrag.BildUrl)));
+                Saeubern(eintrag.BildUrl),
+                Saeubern(eintrag.Menge),
+                Saeubern(eintrag.Allergene),
+                Saeubern(eintrag.Spuren),
+                Saeubern(eintrag.Auszeichnungen),
+                Saeubern(eintrag.Naehrwerte),
+                Saeubern(eintrag.Nutriscore),
+                Saeubern(eintrag.Zutaten)));
 
             geschrieben++;
         }
@@ -70,6 +85,29 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
         }
 
         return geschrieben;
+    }
+
+    /// <summary>
+    /// Die Angabenspalten einer Katalogzeile. Aeltere Dateien haben sie nicht — dann ist
+    /// das Ergebnis null und der Artikel kommt ohne Auskunft herein.
+    /// </summary>
+    private static Produktangaben? AngabenLesen(string[] felder)
+    {
+        if (felder.Length < 12)
+        {
+            return null;
+        }
+
+        var angaben = new Produktangaben(
+            Menge: Wert(felder[5]),
+            Allergene: Wert(felder[6]),
+            Spuren: Wert(felder[7]),
+            Auszeichnungen: Wert(felder[8]),
+            Naehrwerte: Wert(felder[9]),
+            Nutriscore: Wert(felder[10]),
+            Zutaten: Wert(felder[11]));
+
+        return angaben.IstLeer ? null : angaben;
     }
 
     public async Task<Importstatistik> LesenAsync(
@@ -128,7 +166,13 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
                 continue;
             }
 
-            stapel.Add(new Rohartikel(name, Wert(felder[2]), ean, Wert(felder[4]), Wert(felder[3])));
+            stapel.Add(new Rohartikel(
+                name,
+                Wert(felder[2]),
+                ean,
+                Wert(felder[4]),
+                Wert(felder[3]),
+                AngabenLesen(felder)));
 
             if (stapel.Count >= stapelgroesse)
             {

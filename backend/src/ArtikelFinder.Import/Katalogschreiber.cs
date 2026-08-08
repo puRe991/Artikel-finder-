@@ -6,8 +6,17 @@ using Microsoft.Extensions.Logging;
 
 namespace ArtikelFinder.Import;
 
+using ArtikelFinder.Import.OpenFoodFacts;
+
 /// <summary>Ein Artikel, so wie ihn eine Importquelle liefert.</summary>
-public sealed record Rohartikel(string Name, string? Marke, string Ean, string? BildUrl, string? ZielKategorie);
+public sealed record Rohartikel(
+    string Name,
+    string? Marke,
+    string Ean,
+    string? BildUrl,
+    string? ZielKategorie,
+    /// <summary>Angaben fuer die Auskunft. Fehlen sie, bleiben die Spalten leer.</summary>
+    Produktangaben? Angaben = null);
 
 /// <summary>
 /// Schreibt importierte Artikel in den Katalog.
@@ -64,6 +73,13 @@ public sealed class Katalogschreiber(ArtikelFinderDbContext db, ILogger<Katalogs
                     Ean = roh.Ean,
                     KategorieId = kategorieId,
                     BildUrl = Kuerzen(roh.BildUrl, 1000),
+                    Menge = Kuerzen(roh.Angaben?.Menge, 60),
+                    Allergene = Kuerzen(roh.Angaben?.Allergene, 400),
+                    Spuren = Kuerzen(roh.Angaben?.Spuren, 400),
+                    Auszeichnungen = Kuerzen(roh.Angaben?.Auszeichnungen, 400),
+                    Naehrwerte = Kuerzen(roh.Angaben?.Naehrwerte, 200),
+                    Nutriscore = Kuerzen(roh.Angaben?.Nutriscore, 1),
+                    Zutaten = Kuerzen(roh.Angaben?.Zutaten, 1600),
                     ErstelltVon = Erstellerquelle.Import,
                     ErstelltAm = jetzt,
                 });
@@ -79,6 +95,18 @@ public sealed class Katalogschreiber(ArtikelFinderDbContext db, ILogger<Katalogs
             }
 
             var geaendert = false;
+
+            // Auch bei den Angaben nur Luecken fuellen — dieselbe Regel wie beim Namen.
+            if (roh.Angaben is { } angaben)
+            {
+                geaendert |= Ergaenzen(angaben.Menge, 60, bestehend.Menge, w => bestehend.Menge = w);
+                geaendert |= Ergaenzen(angaben.Allergene, 400, bestehend.Allergene, w => bestehend.Allergene = w);
+                geaendert |= Ergaenzen(angaben.Spuren, 400, bestehend.Spuren, w => bestehend.Spuren = w);
+                geaendert |= Ergaenzen(angaben.Auszeichnungen, 400, bestehend.Auszeichnungen, w => bestehend.Auszeichnungen = w);
+                geaendert |= Ergaenzen(angaben.Naehrwerte, 200, bestehend.Naehrwerte, w => bestehend.Naehrwerte = w);
+                geaendert |= Ergaenzen(angaben.Nutriscore, 1, bestehend.Nutriscore, w => bestehend.Nutriscore = w);
+                geaendert |= Ergaenzen(angaben.Zutaten, 1600, bestehend.Zutaten, w => bestehend.Zutaten = w);
+            }
 
             // Nur Luecken fuellen: ein bereits importierter Name kann von dir korrigiert
             // worden sein, auch wenn der Artikel selbst aus dem Import stammt.
@@ -130,6 +158,18 @@ public sealed class Katalogschreiber(ArtikelFinderDbContext db, ILogger<Katalogs
             .ToDictionaryAsync(g => g.Key, g => g.Min(k => k.Id), ct);
 
         return _kategorieIds;
+    }
+
+    /// <summary>Setzt einen Wert nur, wenn dort noch nichts steht. Meldet, ob es etwas gab.</summary>
+    private static bool Ergaenzen(string? neu, int maximum, string? bestehend, Action<string?> setzen)
+    {
+        if (string.IsNullOrWhiteSpace(neu) || !string.IsNullOrWhiteSpace(bestehend))
+        {
+            return false;
+        }
+
+        setzen(Kuerzen(neu, maximum));
+        return true;
     }
 
     private static string? Kuerzen(string? wert, int maximum)

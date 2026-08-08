@@ -1,9 +1,11 @@
 # Artikel-Finder
 
-Artikelsuche für den Supermarkt: Name, EAN, Normalpreis, laufender Werbepreis und der Gang,
-in dem der Artikel steht. Beim ersten Start wählst du deinen Markt — Kaufland, Rewe, Aldi,
-Lidl, Edeka, dm und ein Dutzend weitere. Mehrere Märkte lassen sich nebeneinander führen
-und umschalten.
+**Auskunft über einen Artikel — für Kunden und für Mitarbeiter.** Wo steht er, was kostet
+er, was ist drin: Name, EAN, Normalpreis, laufender Werbepreis, der Gang, dazu Allergene,
+Zutaten, Auszeichnungen wie Bio oder Vegan, Nährwerte und Nutri-Score.
+
+Beim ersten Start wählst du deinen Markt — Kaufland, Rewe, Aldi, Lidl, Edeka, dm und ein
+Dutzend weitere. Mehrere Märkte lassen sich nebeneinander führen und umschalten.
 
 **Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
 Der Artikelkatalog — gut 19.000 reale Produkte aus
@@ -24,15 +26,16 @@ android/                              Die App — Kotlin, Jetpack Compose, Room
   app/src/main/java/de/artikelfinder/app/
     data/                             Room-Datenbank, Repository, Katalogaufbau
     data/markt/                       Ketten, Eigenmarken, Marktwahl
+    data/Angabenleser.kt              Allergene, Nährwerte und Zutaten fürs Anzeigemodell
     data/sicherung/                   Sicherungsdatei der eigenen Erfassungen
     ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | markt | sicherung
-  app/src/test/                       66 Tests gegen echtes SQLite (Robolectric)
+  app/src/test/                       75 Tests gegen echtes SQLite (Robolectric)
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
   src/ArtikelFinder.Api/              Datenmodell und Web-API für Phase 3 (Mehrbenutzer)
   daten/katalog-seed.tsv.gz           Quelle des Katalogs in der App
-  tests/                              79 Tests
+  tests/                              96 Tests
 
 .github/workflows/ci.yml              Baut die App und fährt beide Testsätze bei jedem Push
 ```
@@ -48,7 +51,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew :app:testDebugUnitTest   # 66 Tests
+./gradlew :app:testDebugUnitTest   # 75 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -71,9 +74,20 @@ dotnet run -- api --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
 # Kaufland-Eigenmarken holen (K-Classic, K-Bio, Purland, Bevola …):
 dotnet run -- marken --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
 
+# Allergene, Zutaten, Auszeichnungen, Nährwerte und Menge nachtragen:
+dotnet run -- anreichern --user-agent "ArtikelFinder/0.1 (deine@mailadresse.de)"
+
 # Katalogdatei neu schreiben:
 dotnet run -- export
 ```
+
+`anreichern` fragt nicht nach Warengruppen oder Marken, sondern gezielt nach den Barcodes,
+die schon im Katalog stehen — gebündelt zu hundert. Aus 19.000 Einzelabfragen werden so
+knapp zweihundert. Der Lauf ist fortsetzbar: ohne `--alle` werden nur Artikel gefragt, zu
+denen noch nichts vorliegt, ein Abbruch kostet also nichts.
+
+Die Standardpause von 6,5 Sekunden ist kein Zufall — Open Food Facts begrenzt Suchanfragen
+auf zehn pro Minute. Wer schneller fragt, wird gedrosselt und ist am Ende langsamer.
 
 `marken` fragt jede Marke in allen fünf Quellen ab (Open Food Facts über Produkt-API und
 Suchdienst, dazu Open Beauty Facts, Open Products Facts, Open Pet Food Facts). Einzelne
@@ -145,6 +159,14 @@ jede Suche zweihundert Markennamen als Parameter mitschleppen. Gefüllt wird die
 `Markenzuordnung` beim Start, gesteuert über eine Zuordnungsversion im Merkposten: wächst
 die Markenliste, kostet das keine Schemaversion, sondern nur eine höhere Zahl.
 
+**Die Auskunft wird über die Barcodes nachgetragen, nicht neu importiert.** Der Katalog
+steht bereits; ihn für ein paar zusätzliche Felder erneut über Warengruppen und Marken
+aufzubauen, träfe andere Artikel und dauerte Stunden. `anreichern` fragt stattdessen genau
+die 19.317 vorhandenen Barcodes ab, gebündelt zu hundert je Anfrage. Die Aufbereitung —
+Tags zu deutschen Begriffen, Nährwerte in eine Zeile — passiert dabei im Importer und nicht
+in der App: die Regel, welche Allergene überhaupt genannt werden dürfen, gehört an genau
+eine Stelle.
+
 **Die Sicherung bezieht sich auf die EAN, nicht auf die Artikel-Id.** Der Katalogaufbau
 vergibt bei jeder Installation neue Ids — eine Sicherung, die daran hinge, wäre auf einem
 zweiten Gerät wertlos, und genau dafür macht man eine. Selbst angelegte Artikel haben oft
@@ -192,6 +214,38 @@ Der gewählte Markt entscheidet über zwei Dinge:
   kein „ja!" und kein „Milbona" — beide verschwinden aus der Trefferliste. Der Filterchip
   „Auch fremde Eigenmarken" holt sie zurück, falls eine Zuordnung danebenliegt.
 
+## Artikelauskunft
+
+Zu jedem Artikel zeigt die App, was Open Food Facts hergibt:
+
+- **Allergene** und „kann Spuren enthalten von" — die Frage, die am Regal am häufigsten
+  gestellt wird.
+- **Auszeichnungen**: Bio, Vegan, Vegetarisch, Glutenfrei, Laktosefrei, Ohne Palmöl,
+  Fairtrade, Halal, Koscher. Sie stehen auch im Suchindex — „vegan schokolade" findet
+  damit etwas.
+- **Zutaten**, eingeklappt.
+- **Nährwerte** je 100 g und **Nutri-Score**.
+- **Füllmenge** neben der Marke.
+
+### Was die Anzeige verspricht — und was nicht
+
+Die Daten stammen aus Open Food Facts, einem Freiwilligenprojekt. Sie sind eine gute erste
+Auskunft und **keine Rechtsgrundlage**; das steht auch auf dem Bildschirm, nicht nur hier.
+
+Zwei Entscheidungen folgen daraus:
+
+**Fehlende Allergenangaben werden ausdrücklich als fehlend gezeigt.** Ein leerer Abschnitt
+liest sich sonst wie „enthält nichts davon", und genau diese Verwechslung ist die
+gefährliche. Der Abschnitt erscheint deshalb immer — auch ohne Daten, und sagt dann klar,
+dass nichts hinterlegt ist.
+
+**Es kommt nur durch, was auf der Positivliste steht.** Open Food Facts leitet Allergene
+teils aus der Zutatenliste ab, und das geht schief: neben `en:milk` und `en:nuts` stehen
+dort Bruchstücke wie `en:Butterreinfett` oder `en:Mandelstückchen`. Übernommen werden
+ausschließlich die vierzehn nach EU-Lebensmittelinformationsverordnung
+kennzeichnungspflichtigen Allergene. Ein unbekannter Tag verschwindet, statt falsch
+beschriftet zu erscheinen — angezeigt wird eher zu wenig als zu viel.
+
 ## Sicherung
 
 Die eigenen Erfassungen lassen sich über *Weitere Aktionen → Sicherung* in eine Textdatei
@@ -218,8 +272,8 @@ Fehlt ein Schritt, schlägt der Test fehl — statt der App beim nächsten Updat
 ## Tests
 
 ```bash
-cd android && ./gradlew :app:testDebugUnitTest   # 66 Tests
-cd backend && dotnet test                        # 79 Tests
+cd android && ./gradlew :app:testDebugUnitTest   # 75 Tests
+cd backend && dotnet test                        # 96 Tests
 ```
 
 `./gradlew test` fährt dieselben App-Tests zusätzlich gegen `release` und `dist` und

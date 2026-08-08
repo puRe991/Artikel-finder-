@@ -27,6 +27,28 @@ public class Artikel
 
     public string? BildUrl { get; set; }
 
+    // --- Angaben fuer die Auskunft im Laden. Quelle: Open Food Facts, siehe Produktinformation. ---
+
+    /// <summary>Fuellmenge wie auf der Packung, z.B. "250 g".</summary>
+    public string? Menge { get; set; }
+
+    /// <summary>Kennzeichnungspflichtige Allergene auf Deutsch, kommagetrennt.</summary>
+    public string? Allergene { get; set; }
+
+    /// <summary>„Kann Spuren enthalten von …", gleiche Form wie <see cref="Allergene"/>.</summary>
+    public string? Spuren { get; set; }
+
+    /// <summary>Bio, Vegan, Glutenfrei … kommagetrennt.</summary>
+    public string? Auszeichnungen { get; set; }
+
+    /// <summary>Naehrwerte je 100 g als <c>kcal=250;fett=12.5</c>.</summary>
+    public string? Naehrwerte { get; set; }
+
+    /// <summary>Nutri-Score a–e.</summary>
+    public string? Nutriscore { get; set; }
+
+    public string? Zutaten { get; set; }
+
     public Erstellerquelle ErstelltVon { get; set; } = Erstellerquelle.Nutzer;
 
     public DateTimeOffset ErstelltAm { get; set; }

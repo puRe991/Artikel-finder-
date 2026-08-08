@@ -104,16 +104,31 @@ class Katalogaufbau @Inject constructor(
             val ean = Ean.normalisieren(felder[0]) ?: continue
             val name = felder[1].trim().ifEmpty { null } ?: continue
             val marke = felder[2].trim().ifEmpty { null }
+            val auszeichnungen = felder.spalte(8)
 
             stapel += ArtikelEintrag(
                 id = UUID.randomUUID().toString(),
                 name = name,
-                suchtext = Suchtext.fuerIndex(listOfNotNull(name, marke).joinToString(" ")),
+                // Auszeichnungen wandern in den Suchtext: „vegan", „glutenfrei" oder „bio"
+                // sind das, wonach am Regal gefragt wird — und ohne sie im Index findet die
+                // Suche sie nicht.
+                suchtext = Suchtext.fuerIndex(
+                    listOfNotNull(name, marke, auszeichnungen).joinToString(" ")
+                ),
                 marke = marke,
                 ean = ean,
                 artikelnummer = null,
                 kategorieId = kategorienNachName[felder[3].trim()],
                 bildUrl = felder[4].trim().ifEmpty { null },
+                // Ab Spalte 5 die Angaben. Aeltere Katalogdateien haben sie nicht — dann
+                // bleiben die Felder leer, statt den Aufbau scheitern zu lassen.
+                menge = felder.spalte(5),
+                allergene = felder.spalte(6),
+                spuren = felder.spalte(7),
+                auszeichnungen = auszeichnungen,
+                naehrwerte = felder.spalte(9),
+                nutriscore = felder.spalte(10),
+                zutaten = felder.spalte(11),
                 erstelltVon = QUELLE_IMPORT,
                 erstelltAm = jetzt,
                 geaendertAm = null,
@@ -157,6 +172,9 @@ class Katalogaufbau @Inject constructor(
 
         return if (istGzip) GZIPInputStream(gepuffert).bufferedReader() else gepuffert.bufferedReader()
     }
+
+    private fun List<String>.spalte(index: Int): String? =
+        getOrNull(index)?.trim()?.ifEmpty { null }
 
     companion object {
         const val QUELLE_IMPORT = "Import"

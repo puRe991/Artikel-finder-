@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ArtikelFinder.Import;
 
 namespace ArtikelFinder.Import.OpenFoodFacts;
 
@@ -51,6 +52,40 @@ public sealed class OffProdukt
     [JsonPropertyName("image_front_small_url")]
     public string? BildUrl { get; set; }
 
+    // --- Angaben fuer die Auskunft im Laden ---
+
+    /// <summary>
+    /// Allergene als Tags. Enthaelt neben den echten (<c>en:milk</c>) auch Bruchstuecke aus
+    /// der Zutatenanalyse (<c>en:Magermilchpulver</c>) — <see cref="Produktinformation"/>
+    /// laesst nur die kennzeichnungspflichtigen durch.
+    /// </summary>
+    [JsonPropertyName("allergens_tags")]
+    public List<string>? AllergenTags { get; set; }
+
+    /// <summary>„Kann Spuren enthalten von …" — dieselbe Behandlung wie die Allergene.</summary>
+    [JsonPropertyName("traces_tags")]
+    public List<string>? SpurenTags { get; set; }
+
+    /// <summary>Bio, Vegan, Glutenfrei und dergleichen.</summary>
+    [JsonPropertyName("labels_tags")]
+    public List<string>? AuszeichnungsTags { get; set; }
+
+    [JsonPropertyName("ingredients_text_de")]
+    public string? ZutatenDe { get; set; }
+
+    [JsonPropertyName("ingredients_text")]
+    public string? Zutaten { get; set; }
+
+    [JsonPropertyName("nutriscore_grade")]
+    public string? Nutriscore { get; set; }
+
+    /// <summary>
+    /// Rund hundert Eintraege je Produkt, je Naehrwert mehrere Fassungen
+    /// (<c>_100g</c>, <c>_serving</c>, <c>_unit</c>). Gelesen werden nur die je 100 g.
+    /// </summary>
+    [JsonPropertyName("nutriments")]
+    public Dictionary<string, object?>? Naehrwerte { get; set; }
+
     /// <summary>Erste Marke aus der kommagetrennten Liste.</summary>
     public string? ErsteMarke() => Marken?
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -98,4 +133,34 @@ public sealed class OffProdukt
 
         return menge;
     }
+
+    /// <summary>Die Menge als eigenes Feld — Grundlage fuer den Grundpreis je Kilo/Liter.</summary>
+    public string? MengeFuerKatalog() => MengeBereinigt();
+
+    /// <summary>
+    /// Die Angaben, die im Laden vorgelesen werden koennen. Deutsche Zutatenliste hat
+    /// Vorrang; fehlt sie, ist die allgemeine besser als keine.
+    /// </summary>
+    public Produktangaben Angaben() => new(
+        Menge: MengeBereinigt(),
+        Allergene: Produktinformation.AllergeneLesen(AllergenTags),
+        Spuren: Produktinformation.AllergeneLesen(SpurenTags),
+        Auszeichnungen: Produktinformation.AuszeichnungenLesen(AuszeichnungsTags),
+        Naehrwerte: Produktinformation.NaehrwerteLesen(Naehrwerte),
+        Nutriscore: Produktinformation.NutriscoreLesen(Nutriscore),
+        Zutaten: Produktinformation.ZutatenLesen(ZutatenDe) ?? Produktinformation.ZutatenLesen(Zutaten));
+}
+
+/// <summary>Was ueber einen Artikel Auskunft gibt, fertig fuer Katalog und Anzeige.</summary>
+public sealed record Produktangaben(
+    string? Menge,
+    string? Allergene,
+    string? Spuren,
+    string? Auszeichnungen,
+    string? Naehrwerte,
+    string? Nutriscore,
+    string? Zutaten)
+{
+    public bool IstLeer => Menge is null && Allergene is null && Spuren is null
+        && Auszeichnungen is null && Naehrwerte is null && Nutriscore is null && Zutaten is null;
 }

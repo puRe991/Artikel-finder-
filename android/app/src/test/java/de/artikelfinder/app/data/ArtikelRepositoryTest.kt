@@ -77,7 +77,15 @@ class ArtikelRepositoryTest {
 
         assertTrue("Zwei Begriffe duerfen nicht mehr treffen als einer", zwei.size <= einer.size)
         assertTrue(zwei.all { treffer ->
-            val text = Suchtext.normalisieren("${treffer.name} ${treffer.marke.orEmpty()}")
+            // Ein Begriff darf auch ueber eine Auszeichnung treffen — „bio" steht bei
+            // vielen Artikeln nicht im Namen, sondern im Siegel.
+            val text = Suchtext.normalisieren(
+                listOfNotNull(
+                    treffer.name,
+                    treffer.marke,
+                    treffer.angaben.auszeichnungen.joinToString(" ").ifEmpty { null },
+                ).joinToString(" ")
+            )
             text.contains("bio") && text.contains("milch")
         })
     }

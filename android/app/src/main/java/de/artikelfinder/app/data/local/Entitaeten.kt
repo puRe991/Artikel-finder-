@@ -39,6 +39,28 @@ data class ArtikelEintrag(
      * darüber filtern kann, ohne hundert Markennamen als Parameter mitzuschleppen.
      */
     @ColumnInfo(name = "eigenmarke_kette") val eigenmarkeKette: String? = null,
+
+    // --- Angaben fuer die Auskunft. Quelle: Open Food Facts, siehe README. ---
+
+    /** Fuellmenge wie auf der Packung, z.B. "250 g". */
+    val menge: String? = null,
+
+    /** Kennzeichnungspflichtige Allergene, kommagetrennt und auf Deutsch. */
+    val allergene: String? = null,
+
+    /** „Kann Spuren enthalten von …", gleiche Form. */
+    val spuren: String? = null,
+
+    /** Bio, Vegan, Glutenfrei … kommagetrennt. */
+    val auszeichnungen: String? = null,
+
+    /** Naehrwerte je 100 g als `kcal=250;fett=12.5`. */
+    val naehrwerte: String? = null,
+
+    /** Nutri-Score a–e. */
+    val nutriscore: String? = null,
+
+    val zutaten: String? = null,
     @ColumnInfo(name = "bild_url") val bildUrl: String?,
     /** "Import" für Katalogartikel, "Nutzer" für selbst angelegte. */
     @ColumnInfo(name = "erstellt_von") val erstelltVon: String,

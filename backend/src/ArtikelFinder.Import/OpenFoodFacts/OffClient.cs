@@ -44,6 +44,13 @@ public interface IOffClient
         int seite,
         int seitengroesse,
         CancellationToken ct);
+
+    /// <summary>
+    /// Holt zu einer Reihe bekannter Barcodes die Angaben fuer die Auskunft. Gefragt wird
+    /// gebuendelt: 19.000 Einzelabfragen waeren Stunden und gegenueber einem
+    /// Freiwilligenprojekt unhoeflich, in Buendeln zu hundert sind es zweihundert.
+    /// </summary>
+    Task<OffSeitenergebnis> AngabenAsync(IReadOnlyCollection<string> codes, CancellationToken ct);
 }
 
 public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffClient
@@ -51,6 +58,14 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
     /// <summary>Nur diese Felder anfordern — spart bei 100 Produkten pro Seite viel Traffic.</summary>
     private const string Felder =
         "code,product_name,product_name_de,brands,quantity,categories,categories_tags,image_front_small_url";
+
+    /// <summary>
+    /// Fuer die Anreicherung: statt Name und Kategorie das, was Auskunft gibt. Die
+    /// Naehrwerte sind der grosse Posten, deshalb bleibt die Buendelgroesse bei hundert.
+    /// </summary>
+    private const string Angabenfelder =
+        "code,quantity,allergens_tags,traces_tags,labels_tags,ingredients_text_de,"
+        + "ingredients_text,nutriscore_grade,nutriments";
 
     /// <summary>
     /// Open Food Facts ist ein Freiwilligenprojekt und antwortet regelmaessig mit 503 oder
@@ -107,6 +122,62 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
                 seite, abfrage, warten.TotalSeconds);
 
             await Task.Delay(warten, ct);
+        }
+    }
+
+    public async Task<OffSeitenergebnis> AngabenAsync(
+        IReadOnlyCollection<string> codes,
+        CancellationToken ct)
+    {
+        if (codes.Count == 0)
+        {
+            return OffSeitenergebnis.Geladen(new OffSuchantwort());
+        }
+
+        var pfad = "https://world.openfoodfacts.org/api/v2/search"
+            + $"?code={string.Join(',', codes)}"
+            + $"&fields={Angabenfelder}"
+            + $"&page_size={codes.Count}";
+
+        for (var versuch = 0; ; versuch++)
+        {
+            try
+            {
+                using var antwort = await http.GetAsync(pfad, ct);
+
+                if (antwort.IsSuccessStatusCode)
+                {
+                    var inhalt = await antwort.Content.ReadAsStreamAsync(ct);
+                    var gelesen = await JsonSerializer.DeserializeAsync<OffSuchantwort>(
+                        inhalt, JsonOptionen, ct);
+
+                    if (gelesen is not null)
+                    {
+                        return OffSeitenergebnis.Geladen(gelesen);
+                    }
+                }
+                else if (antwort.StatusCode is System.Net.HttpStatusCode.BadRequest
+                         or System.Net.HttpStatusCode.NotFound)
+                {
+                    // An der Anfrage stimmt etwas nicht — Wiederholen aendert daran nichts.
+                    return OffSeitenergebnis.Abgelehnt;
+                }
+            }
+            catch (Exception fehler) when (fehler is not OperationCanceledException)
+            {
+                log.LogDebug(fehler, "Bündel mit {Anzahl} Codes fehlgeschlagen.", codes.Count);
+            }
+
+            if (versuch >= Wartezeiten.Length)
+            {
+                log.LogWarning(
+                    "Bündel mit {Anzahl} Codes auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
+                    codes.Count, Wartezeiten.Length + 1);
+
+                return OffSeitenergebnis.Fehlgeschlagen;
+            }
+
+            await Task.Delay(Wartezeiten[versuch], ct);
         }
     }
 

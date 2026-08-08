@@ -484,6 +484,7 @@ private fun ArtikelMitStand.zuModell(): Artikel {
             Preis(preis = it, werbepreis = werbepreis, werbepreisAktiv = aktiv, werbepreisGueltigBis = werbepreisBis)
         },
         standort = gang?.let { Standort(gang = it, regalBeschreibung = regalBeschreibung) },
+        angaben = Angabenleser.lesen(artikel),
     )
 }
 

@@ -252,5 +252,11 @@ public sealed class MarkenimportTests : IAsyncLifetime
                     ? ergebnis
                     : OffSeitenergebnis.Geladen(new OffSuchantwort { Produkte = [] }));
         }
+
+        /// <summary>Die Anreicherung spielt in diesen Tests keine Rolle.</summary>
+        public Task<OffSeitenergebnis> AngabenAsync(
+            IReadOnlyCollection<string> codes,
+            CancellationToken ct) =>
+            Task.FromResult(OffSeitenergebnis.Geladen(new OffSuchantwort()));
     }
 }

@@ -30,7 +30,7 @@ abstract class ArtikelDatenbank : RoomDatabase() {
          * eintragen. Die Konstante steht hier, damit der Migrationstest gegen dieselbe
          * Zahl prüfen kann wie die Annotation.
          */
-        const val VERSION = 2
+        const val VERSION = 3
 
         const val NAME = "artikelfinder.db"
     }

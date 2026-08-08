@@ -92,9 +92,27 @@ var seedBefehl = new Command("seed", "Liest eine mit 'export' erzeugte Katalogda
     katalogDateiOption, seedStapelOption,
 };
 
+// --- Befehl: anreichern ---
+var anreichernBuendelOption = new Option<int>(
+    "--buendel", () => 100, "Barcodes je Anfrage (max. 100).");
+var anreichernPauseOption = new Option<int>(
+    "--pause", () => 1200, "Pause zwischen den Bündeln in Millisekunden.");
+var anreichernMaxOption = new Option<int>(
+    "--max", () => 0, "Höchstzahl Artikel. 0 = alle. Für einen Probelauf nützlich.");
+var anreichernAlleOption = new Option<bool>(
+    "--alle", "Auch Artikel erneut fragen, zu denen schon Angaben vorliegen.");
+
+var anreichernBefehl = new Command(
+    "anreichern",
+    "Holt zu den vorhandenen Artikeln Allergene, Zutaten, Auszeichnungen, Nährwerte und "
+    + "Menge — gebündelt über die Barcodes, die bereits im Katalog stehen.")
+{
+    anreichernBuendelOption, anreichernPauseOption, anreichernMaxOption, anreichernAlleOption,
+};
+
 var wurzel = new RootCommand("Befüllt den Artikel-Finder-Katalog aus der Open-Food-Facts-Familie.")
 {
-    apiBefehl, markenBefehl, csvBefehl, exportBefehl, seedBefehl,
+    apiBefehl, markenBefehl, csvBefehl, anreichernBefehl, exportBefehl, seedBefehl,
 };
 
 wurzel.AddGlobalOption(datenbankOption);
@@ -242,6 +260,30 @@ seedBefehl.SetHandler(async kontext =>
     protokoll.LogInformation("Fertig. {Statistik}", statistik);
 });
 
+anreichernBefehl.SetHandler(async kontext =>
+{
+    var dienste = DiensteBauen(
+        kontext.ParseResult.GetValueForOption(datenbankOption)!,
+        kontext.ParseResult.GetValueForOption(userAgentOption)!,
+        kontext.ParseResult.GetValueForOption(ausfuehrlichOption));
+
+    await using var _ = dienste;
+    var ct = kontext.GetCancellationToken();
+    await DatenbankVorbereitenAsync(dienste, ct);
+
+    var einstellungen = new AnreicherungsEinstellungen
+    {
+        Buendelgroesse = Math.Clamp(kontext.ParseResult.GetValueForOption(anreichernBuendelOption), 1, 100),
+        Pause = TimeSpan.FromMilliseconds(Math.Max(0, kontext.ParseResult.GetValueForOption(anreichernPauseOption))),
+        Hoechstzahl = Math.Max(0, kontext.ParseResult.GetValueForOption(anreichernMaxOption)),
+        AlleErneut = kontext.ParseResult.GetValueForOption(anreichernAlleOption),
+    };
+
+    var statistik = await dienste.GetRequiredService<Anreicherer>().AusfuehrenAsync(einstellungen, ct);
+    dienste.GetRequiredService<ILoggerFactory>().CreateLogger("Anreichern")
+        .LogInformation("Fertig. {Statistik}", statistik);
+});
+
 return await wurzel.InvokeAsync(args);
 
 static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool ausfuehrlich)
@@ -270,6 +312,7 @@ static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool au
     dienste.AddScoped<Katalogschreiber>();
     dienste.AddScoped<Katalogdatei>();
     dienste.AddScoped<ApiImporter>();
+    dienste.AddScoped<Anreicherer>();
     dienste.AddScoped<CsvImporter>();
 
     return dienste.BuildServiceProvider();
