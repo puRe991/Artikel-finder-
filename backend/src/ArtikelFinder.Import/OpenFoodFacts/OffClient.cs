@@ -63,6 +63,21 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
     /// Fuer die Anreicherung: statt Name und Kategorie das, was Auskunft gibt. Die
     /// Naehrwerte sind der grosse Posten, deshalb bleibt die Buendelgroesse bei hundert.
     /// </summary>
+    /// <summary>
+    /// Fuer die Anreicherung eine eigene Leiter: die Abweisungen kommen dort nach unter
+    /// einer Sekunde und sind kein Ueberlastsignal, sondern eine Mengenbegrenzung. Ein
+    /// zweiter Versuch nach zwei Sekunden hat gute Aussichten, waehrend 45 Sekunden Warten
+    /// bei zweihundert Buendeln eine Stunde kosten wuerden.
+    /// </summary>
+    private static readonly TimeSpan[] AngabenWartezeiten =
+    [
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(4),
+        TimeSpan.FromSeconds(8),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(30),
+    ];
+
     private const string Angabenfelder =
         "code,quantity,allergens_tags,traces_tags,labels_tags,ingredients_text_de,"
         + "ingredients_text,nutriscore_grade,nutriments";
@@ -168,16 +183,16 @@ public sealed class OffClient(HttpClient http, ILogger<OffClient> log) : IOffCli
                 log.LogDebug(fehler, "Bündel mit {Anzahl} Codes fehlgeschlagen.", codes.Count);
             }
 
-            if (versuch >= Wartezeiten.Length)
+            if (versuch >= AngabenWartezeiten.Length)
             {
                 log.LogWarning(
                     "Bündel mit {Anzahl} Codes auch nach {Versuche} Versuchen nicht erreichbar — übersprungen.",
-                    codes.Count, Wartezeiten.Length + 1);
+                    codes.Count, AngabenWartezeiten.Length + 1);
 
                 return OffSeitenergebnis.Fehlgeschlagen;
             }
 
-            await Task.Delay(Wartezeiten[versuch], ct);
+            await Task.Delay(AngabenWartezeiten[versuch], ct);
         }
     }
 
