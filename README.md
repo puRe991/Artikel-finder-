@@ -221,13 +221,15 @@ Zu jedem Artikel zeigt die App, was Open Food Facts hergibt. Im ausgelieferten K
 
 | Angabe | Artikel | Anteil |
 |---|---:|---:|
-| Füllmenge | 17.303 | 89 % |
-| Nährwerte | 15.500 | 80 % |
-| Nutri-Score | 13.483 | 69 % |
-| Zutaten | 13.439 | 69 % |
-| Allergene | 7.774 | 40 % |
-| Auszeichnungen | 6.128 | 31 % |
-| „Kann Spuren enthalten" | 4.589 | 23 % |
+| Füllmenge | 17.768 | 91 % |
+| Nährwerte | 15.928 | 82 % |
+| Nutri-Score | 13.789 | 71 % |
+| Zutaten | 13.802 | 71 % |
+| Allergene | 7.985 | 41 % |
+| Auszeichnungen | 6.296 | 32 % |
+| „Kann Spuren enthalten" | 4.710 | 24 % |
+
+Zu 214 Artikeln (1 %) führt Open Food Facts überhaupt nichts.
 
 Im Einzelnen:
 
