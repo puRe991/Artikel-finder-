@@ -6,6 +6,7 @@ import de.artikelfinder.app.data.Suchtext
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.MarktEintrag
+import de.artikelfinder.app.data.local.Merkposten
 import de.artikelfinder.app.data.local.MerkpostenEintrag
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
@@ -99,7 +100,10 @@ class Sicherungsdienst @Inject constructor(
                     )
                 }
             },
+            // Nur, was der Nutzer eingegeben hat. Die gewaehlte Markt-Id und der Stand der
+            // Markenzuordnung gelten je Geraet und haetten auf einem anderen nichts zu suchen.
             merkposten = datenbank.merkpostenDao().alle()
+                .filter { it.schluessel in Merkposten.SICHERBAR }
                 .map { GesicherterMerkposten(it.schluessel, it.wert) },
         )
     }
@@ -189,9 +193,9 @@ class Sicherungsdienst @Inject constructor(
             }
             datenbank.verlaufDao().einfuegen(neuerVerlauf)
 
-            sicherung.merkposten.forEach {
-                datenbank.merkpostenDao().schreiben(MerkpostenEintrag(it.schluessel, it.wert))
-            }
+            sicherung.merkposten
+                .filter { it.schluessel in Merkposten.SICHERBAR }
+                .forEach { datenbank.merkpostenDao().schreiben(MerkpostenEintrag(it.schluessel, it.wert)) }
 
             Sicherungsbericht(
                 neueArtikel = neueArtikel,

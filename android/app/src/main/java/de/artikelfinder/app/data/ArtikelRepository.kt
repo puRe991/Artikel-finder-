@@ -4,6 +4,8 @@ import de.artikelfinder.app.data.Katalogaufbau.Companion.QUELLE_NUTZER
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.ArtikelMitStand
+import de.artikelfinder.app.data.local.Merkposten
+import de.artikelfinder.app.data.local.MerkpostenEintrag
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
@@ -58,11 +60,11 @@ class ArtikelRepository @Inject constructor(
      * Zeitraum fuer jedes Angebot; ihn 40-mal einzugeben waere die eigentliche Arbeit.
      */
     suspend fun letztesAktionsende(): Long? =
-        datenbank.merkpostenDao().lesen(MERKPOSTEN_AKTIONSENDE)?.toLongOrNull()
+        datenbank.merkpostenDao().lesen(Merkposten.AKTIONSENDE)?.toLongOrNull()
 
     suspend fun aktionsendeMerken(zeitpunkt: Long) =
         datenbank.merkpostenDao().schreiben(
-            de.artikelfinder.app.data.local.MerkpostenEintrag(MERKPOSTEN_AKTIONSENDE, zeitpunkt.toString())
+            MerkpostenEintrag(Merkposten.AKTIONSENDE, zeitpunkt.toString())
         )
 
     fun zuletztBearbeitet(): Flow<List<Artikel>> =
@@ -192,6 +194,7 @@ class ArtikelRepository @Inject constructor(
                 artikelnummer = artikelnummer.leerAlsNull(),
                 kategorieId = kategorieId,
                 bildUrl = null,
+                eigenmarkeKette = Ketten.ketteFuerMarke(marke),
                 erstelltVon = QUELLE_NUTZER,
                 erstelltAm = jetzt,
                 geaendertAm = null,
@@ -244,6 +247,7 @@ class ArtikelRepository @Inject constructor(
                 ean = normalisierteEan,
                 artikelnummer = artikelnummer.leerAlsNull(),
                 kategorieId = kategorieId,
+                eigenmarkeKette = Ketten.ketteFuerMarke(marke),
                 geaendertAm = jetzt,
             )
         )
@@ -454,8 +458,6 @@ class ArtikelRepository @Inject constructor(
     private fun marktId(): Int = maerkte.aktuelleId()
 
     private companion object {
-        const val MERKPOSTEN_AKTIONSENDE = "aktionsende"
-
         /** Trifft keinen Markt — solange keiner gewaehlt ist, bleiben die Listen leer. */
         const val KEIN_MARKT = 0
     }

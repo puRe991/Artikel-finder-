@@ -2,6 +2,7 @@ package de.artikelfinder.app.data.markt
 
 import de.artikelfinder.app.data.Suchtext
 import de.artikelfinder.app.data.local.ArtikelDatenbank
+import de.artikelfinder.app.data.local.Merkposten
 import de.artikelfinder.app.data.local.MerkpostenEintrag
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,11 +24,11 @@ class Markenzuordnung @Inject constructor(private val datenbank: ArtikelDatenban
 
     suspend fun nachtragenWennNoetig() {
         val merkposten = datenbank.merkpostenDao()
-        val erledigt = merkposten.lesen(MERKPOSTEN)?.toIntOrNull() ?: 0
+        val erledigt = merkposten.lesen(Merkposten.MARKENZUORDNUNG)?.toIntOrNull() ?: 0
         if (erledigt >= Ketten.ZUORDNUNG_VERSION) return
 
         nachtragen()
-        merkposten.schreiben(MerkpostenEintrag(MERKPOSTEN, Ketten.ZUORDNUNG_VERSION.toString()))
+        merkposten.schreiben(MerkpostenEintrag(Merkposten.MARKENZUORDNUNG, Ketten.ZUORDNUNG_VERSION.toString()))
     }
 
     /** Setzt die Zuordnung neu — auch dort, wo bisher eine falsche stand. */
@@ -50,8 +51,6 @@ class Markenzuordnung @Inject constructor(private val datenbank: ArtikelDatenban
     }
 
     private companion object {
-        const val MERKPOSTEN = "markenzuordnung"
-
         /** SQLite nimmt nicht beliebig viele Platzhalter in einem IN(...) entgegen. */
         const val SQL_PARAMETERGRENZE = 500
     }

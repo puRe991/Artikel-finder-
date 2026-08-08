@@ -210,6 +210,25 @@ class SicherungsdienstTest {
         assertEquals(1.49, neu.repository.perEan(MILCH).erfolg()!!.artikel.preis!!.preis, 0.001)
     }
 
+    @Test
+    fun `Der gewaehlte Markt des Quellgeraets wird nicht mitgeschickt`() = runTest {
+        val alt = installation()
+        alt.repository.preisErfassen(alt.repository.perEan(MILCH).erfolg()!!.artikel.id, 1.49)
+        val sicherung = alt.dienst.erstellen()
+
+        // Die Markt-Id gilt nur lokal, der Stand der Markenzuordnung gehoert zur App —
+        // beides wuerde dem Zielgeraet beim Einspielen falsche Zustaende unterschieben.
+        val schluessel = sicherung.merkposten.map { it.schluessel }
+        assertTrue("Nur Nutzereingaben gehoeren in die Datei, war $schluessel",
+            schluessel.none { it == "markt" || it == "markenzuordnung" })
+
+        val neu = installation(kette = Ketten.LIDL, ort = "Wetzlar")
+        val vorher = neu.maerkte.aktuelleId()
+        neu.dienst.einspielen(Sicherungsformat.lesen(Sicherungsformat.schreiben(sicherung)).erfolg())
+
+        assertEquals("Der eigene Markt bleibt gewaehlt", vorher, neu.maerkte.aktuelleId())
+    }
+
     /** Eine frische Installation: eigene Datenbank, eigener Katalogaufbau, eigene Ids. */
     private suspend fun installation(
         katalog: String = KATALOG,

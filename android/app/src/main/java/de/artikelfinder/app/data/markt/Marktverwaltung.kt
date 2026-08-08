@@ -2,6 +2,7 @@ package de.artikelfinder.app.data.markt
 
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.MarktEintrag
+import de.artikelfinder.app.data.local.Merkposten
 import de.artikelfinder.app.data.local.MerkpostenEintrag
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,9 +16,10 @@ import javax.inject.Singleton
  *
  * Preise und Gänge hängen seit dem ersten Entwurf am Markt, nicht am Artikel allein —
  * dieselbe Butter steht im Kaufland in Gang 3 und im Rewe in Gang 7, zu verschiedenen
- * Preisen. Die Wahl des Markts entscheidet deshalb, welche Erfassungen die App zeigt, und
- * sie steckt als Merkposten in der Datenbank statt in den Einstellungen: sie gehört zu den
- * Daten, nicht zur Oberfläche, und wandert damit auch in die Sicherung.
+ * Preisen. Die Wahl des Markts entscheidet deshalb, welche Erfassungen die App zeigt.
+ *
+ * Sie steht als Merkposten in der Datenbank, wandert aber nicht in die Sicherung: die
+ * Markt-Id gilt nur auf diesem Gerät. Siehe [Merkposten].
  */
 @Singleton
 class Marktverwaltung @Inject constructor(private val datenbank: ArtikelDatenbank) {
@@ -36,7 +38,7 @@ class Marktverwaltung @Inject constructor(private val datenbank: ArtikelDatenban
      */
     suspend fun laden() {
         val stammdaten = datenbank.stammdatenDao()
-        val gemerkt = datenbank.merkpostenDao().lesen(MERKPOSTEN)?.toIntOrNull()
+        val gemerkt = datenbank.merkpostenDao().lesen(Merkposten.MARKT)?.toIntOrNull()
 
         _aktuell.value = gemerkt?.let { stammdaten.markt(it) }
             ?: stammdaten.maerkte().firstOrNull()?.also { merken(it.id) }
@@ -101,9 +103,5 @@ class Marktverwaltung @Inject constructor(private val datenbank: ArtikelDatenban
     fun aktuelleKette(): String? = _aktuell.value?.kette
 
     private suspend fun merken(marktId: Int) =
-        datenbank.merkpostenDao().schreiben(MerkpostenEintrag(MERKPOSTEN, marktId.toString()))
-
-    private companion object {
-        const val MERKPOSTEN = "markt"
-    }
+        datenbank.merkpostenDao().schreiben(MerkpostenEintrag(Merkposten.MARKT, marktId.toString()))
 }

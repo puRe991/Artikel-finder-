@@ -199,6 +199,17 @@ class MarktTest {
         assertNotNull(maerkte.aktuell.value)
     }
 
+    @Test
+    fun `Ein selbst angelegter Artikel bekommt die Kette seiner Marke`() = runTest {
+        maerkte.anlegen(Ketten.KAUFLAND)
+        repository.anlegen(name = "Handerfasste Sahne", marke = "K-Classic")
+
+        // Im Rewe hat der Artikel nichts zu suchen — auch wenn er von Hand kam.
+        maerkte.anlegen(Ketten.REWE)
+        assertTrue(repository.suchen("handerfasste sahne").erfolg().isEmpty())
+        assertEquals(1, repository.suchen("handerfasste sahne", fremdeEigenmarken = true).erfolg().size)
+    }
+
     private companion object {
         private fun katalog(vararg zeilen: String) =
             (listOf("ean\tname\tmarke\tkategorie\tbildUrl") + zeilen).joinToString("\n")
