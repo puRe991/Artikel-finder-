@@ -27,6 +27,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import de.artikelfinder.app.data.Aufbauzustand
 import de.artikelfinder.app.ui.ArtikelFinderNavigation
 import de.artikelfinder.app.ui.StartViewModel
+import de.artikelfinder.app.ui.Startzustand
+import de.artikelfinder.app.ui.markt.MaerkteBildschirm
 import de.artikelfinder.app.ui.theme.ArtikelFinderTheme
 
 @AndroidEntryPoint
@@ -46,12 +48,22 @@ class MainActivity : ComponentActivity() {
                     val zustand by startViewModel.zustand.collectAsStateWithLifecycle()
 
                     when (val aktuell = zustand) {
-                        is Aufbauzustand.Fertig -> ArtikelFinderNavigation()
-                        is Aufbauzustand.Fehlgeschlagen -> Aufbaufehler(
+                        is Startzustand.Bereit -> ArtikelFinderNavigation()
+
+                        // Ohne Markt weiss die App nicht, zu welchem Laden ein erfasster
+                        // Preis gehoert — deshalb geht es hier nicht ohne Wahl weiter.
+                        is Startzustand.MarktWaehlen -> MaerkteBildschirm(
+                            ersteWahl = true,
+                            beiFertig = startViewModel::marktGewaehlt,
+                        )
+
+                        is Startzustand.Fehlgeschlagen -> Aufbaufehler(
                             meldung = aktuell.meldung,
                             beiWiederholen = startViewModel::starten,
                         )
-                        else -> Katalogaufbau(aktuell)
+
+                        is Startzustand.Katalogaufbau -> Katalogaufbau(aktuell.fortschritt)
+                        is Startzustand.Laedt -> Katalogaufbau(Aufbauzustand.Pruefen)
                     }
                 }
             }

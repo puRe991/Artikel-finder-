@@ -2,14 +2,16 @@ package de.artikelfinder.app.data.sicherung
 
 import androidx.room.withTransaction
 import de.artikelfinder.app.data.Katalogaufbau.Companion.QUELLE_NUTZER
-import de.artikelfinder.app.data.Katalogaufbau.Companion.STANDARD_MARKT
 import de.artikelfinder.app.data.Suchtext
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
+import de.artikelfinder.app.data.local.MarktEintrag
 import de.artikelfinder.app.data.local.MerkpostenEintrag
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
+import de.artikelfinder.app.data.markt.Ketten
+import de.artikelfinder.app.data.markt.Marktverwaltung
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,7 +23,10 @@ import javax.inject.Singleton
  * ihre Id aus der Datei mit, deshalb ist mehrfaches Einspielen derselben Datei folgenlos.
  */
 @Singleton
-class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenbank) {
+class Sicherungsdienst @Inject constructor(
+    private val datenbank: ArtikelDatenbank,
+    private val maerkte: Marktverwaltung,
+) {
 
     suspend fun erstellen(jetzt: Long = System.currentTimeMillis()): Sicherung {
         val preise = datenbank.preisDao().alle()
@@ -39,8 +44,18 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
         val bezuege = bezuegeErmitteln(betroffene)
         val kategorienNachId = datenbank.stammdatenDao().kategorien().associate { it.id to it.name }
 
+        // Nur Maerkte, zu denen es auch Erfassungen gibt — ein leer angelegter Markt ist
+        // nichts, was man sichern muesste.
+        val benutzteMaerkte = (preise.map { it.marktId } + standorte.map { it.marktId }).toSet()
+        val marktSchluessel = datenbank.stammdatenDao().maerkte()
+            .filter { it.id in benutzteMaerkte }
+            .associate { it.id to Suchtext.normalisieren(it.name) }
+
         return Sicherung(
             erstelltAm = jetzt,
+            maerkte = datenbank.stammdatenDao().maerkte()
+                .filter { it.id in benutzteMaerkte }
+                .map { GesicherterMarkt(marktSchluessel.getValue(it.id), it.kette, it.name, it.ort) },
             artikel = eigeneArtikel.map {
                 GesicherterArtikel(
                     id = it.id,
@@ -59,6 +74,7 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
                         werbepreisVon = eintrag.werbepreisVon,
                         werbepreisBis = eintrag.werbepreisBis,
                         erfasstAm = eintrag.erfasstAm, erfasstVon = eintrag.erfasstVon,
+                        marktSchluessel = marktSchluessel[eintrag.marktId],
                     )
                 }
             },
@@ -69,6 +85,7 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
                         regalBeschreibung = eintrag.regalBeschreibung,
                         kartenX = eintrag.kartenX, kartenY = eintrag.kartenY,
                         erfasstAm = eintrag.erfasstAm, erfasstVon = eintrag.erfasstVon,
+                        marktSchluessel = marktSchluessel[eintrag.marktId],
                     )
                 }
             },
@@ -91,6 +108,7 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
         datenbank.withTransaction {
             val kategorienNachName = datenbank.stammdatenDao().kategorien()
                 .associate { it.name to it.id }
+            val marktZuordnung = maerkteAufloesen(sicherung.maerkte)
             val aufloeser = Artikelaufloeser()
 
             var neueArtikel = 0
@@ -117,6 +135,7 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
                         artikelnummer = eintrag.artikelnummer,
                         kategorieId = eintrag.kategorie?.let(kategorienNachName::get),
                         bildUrl = null,
+                        eigenmarkeKette = Ketten.ketteFuerMarke(eintrag.marke),
                         erstelltVon = QUELLE_NUTZER,
                         erstelltAm = sicherung.erstelltAm,
                         geaendertAm = null,
@@ -131,7 +150,7 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
             val preise = sicherung.preise.mapNotNull { eintrag ->
                 val id = aufloeser.lokaleId(eintrag.bezug) ?: run { ohneArtikel++; return@mapNotNull null }
                 PreisEintrag(
-                    id = eintrag.id, artikelId = id, marktId = STANDARD_MARKT,
+                    id = eintrag.id, artikelId = id, marktId = marktFuer(eintrag.marktSchluessel, marktZuordnung),
                     wert = eintrag.wert, werbepreis = eintrag.werbepreis,
                     werbepreisVon = eintrag.werbepreisVon, werbepreisBis = eintrag.werbepreisBis,
                     erfasstAm = eintrag.erfasstAm, erfasstVon = eintrag.erfasstVon,
@@ -141,7 +160,7 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
             val standorte = sicherung.standorte.mapNotNull { eintrag ->
                 val id = aufloeser.lokaleId(eintrag.bezug) ?: run { ohneArtikel++; return@mapNotNull null }
                 StandortEintrag(
-                    id = eintrag.id, artikelId = id, marktId = STANDARD_MARKT,
+                    id = eintrag.id, artikelId = id, marktId = marktFuer(eintrag.marktSchluessel, marktZuordnung),
                     gang = eintrag.gang, regalBeschreibung = eintrag.regalBeschreibung,
                     kartenX = eintrag.kartenX, kartenY = eintrag.kartenY,
                     erfasstAm = eintrag.erfasstAm, erfasstVon = eintrag.erfasstVon,
@@ -183,6 +202,34 @@ class Sicherungsdienst @Inject constructor(private val datenbank: ArtikelDatenba
                 ohneArtikel = ohneArtikel,
             )
         }
+
+    /**
+     * Ordnet die Maerkte aus der Datei denen dieses Geraets zu — ueber den normalisierten
+     * Namen, denn die Markt-Id ist wie die Artikel-Id nur lokal gueltig. Was fehlt, wird
+     * angelegt: die Preise eines Markts, den es hier nicht gibt, waeren sonst verloren.
+     */
+    private suspend fun maerkteAufloesen(gesichert: List<GesicherterMarkt>): Map<String, Int> {
+        if (gesichert.isEmpty()) return emptyMap()
+
+        val stammdaten = datenbank.stammdatenDao()
+        val vorhanden = stammdaten.maerkte().associateBy { Suchtext.normalisieren(it.name) }
+
+        return gesichert.associate { markt ->
+            val lokal = vorhanden[markt.schluessel]?.id
+                ?: stammdaten.marktEinfuegen(
+                    MarktEintrag(name = markt.name, kette = markt.kette, ort = markt.ort)
+                ).toInt()
+
+            markt.schluessel to lokal
+        }
+    }
+
+    /**
+     * Dateien aus Format 1 kennen keine Maerkte — damals gab es nur einen. Ihre Erfassungen
+     * landen im gerade gewaehlten Markt, was der einzigen sinnvollen Lesart entspricht.
+     */
+    private fun marktFuer(schluessel: String?, zuordnung: Map<String, Int>): Int =
+        schluessel?.let { zuordnung[it] } ?: maerkte.aktuelleId()
 
     private suspend fun bezuegeErmitteln(ids: Set<String>): Map<String, Artikelbezug> =
         ids.chunked(SQL_PARAMETERGRENZE)

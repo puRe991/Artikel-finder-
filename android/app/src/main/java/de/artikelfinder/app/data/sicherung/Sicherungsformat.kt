@@ -18,7 +18,7 @@ import de.artikelfinder.app.data.Abruf
  */
 object Sicherungsformat {
 
-    const val FORMATVERSION = 1
+    const val FORMATVERSION = 2
 
     private const val TRENNER = '\t'
 
@@ -28,6 +28,7 @@ object Sicherungsformat {
     private const val STANDORT = "S"
     private const val VERLAUF = "V"
     private const val MERKPOSTEN = "M"
+    private const val MARKT = "K"
 
     fun schreiben(sicherung: Sicherung): String = buildString {
         appendLine("# Artikel-Finder — selbst erfasste Preise, Standorte und Notizen.")
@@ -36,6 +37,9 @@ object Sicherungsformat {
         zeile(this, "format", FORMATVERSION.toString())
         zeile(this, "erstellt", sicherung.erstelltAm.toString())
 
+        sicherung.maerkte.forEach {
+            zeile(this, MARKT, it.schluessel, it.kette, it.name, it.ort)
+        }
         sicherung.artikel.forEach {
             zeile(this, ARTIKEL, it.id, it.ean, it.name, it.marke, it.artikelnummer, it.kategorie)
         }
@@ -44,13 +48,14 @@ object Sicherungsformat {
                 this, PREIS, it.id, it.bezug.kodiert(), it.wert.toString(),
                 it.werbepreis?.toString(), it.werbepreisVon?.toString(),
                 it.werbepreisBis?.toString(), it.erfasstAm.toString(), it.erfasstVon,
+                it.marktSchluessel,
             )
         }
         sicherung.standorte.forEach {
             zeile(
                 this, STANDORT, it.id, it.bezug.kodiert(), it.gang, it.regalBeschreibung,
                 it.kartenX?.toString(), it.kartenY?.toString(),
-                it.erfasstAm.toString(), it.erfasstVon,
+                it.erfasstAm.toString(), it.erfasstVon, it.marktSchluessel,
             )
         }
         sicherung.verlauf.forEach {
@@ -71,6 +76,7 @@ object Sicherungsformat {
         val standorte = mutableListOf<GesicherterStandort>()
         val verlauf = mutableListOf<GesicherterVerlauf>()
         val merkposten = mutableListOf<GesicherterMerkposten>()
+        val maerkte = mutableListOf<GesicherterMarkt>()
 
         inhalt.lineSequence().forEach { rohzeile ->
             if (rohzeile.isBlank() || rohzeile.startsWith("#")) return@forEach
@@ -80,6 +86,14 @@ object Sicherungsformat {
             when (felder[0]) {
                 "format" -> formatversion = felder.getOrNull(1)?.toIntOrNull()
                 "erstellt" -> erstelltAm = felder.getOrNull(1)?.toLongOrNull() ?: 0L
+
+                MARKT -> {
+                    felder.pruefen(4) ?: return@forEach
+                    maerkte += GesicherterMarkt(
+                        schluessel = felder[1], kette = felder[2], name = felder[3],
+                        ort = felder.leerAlsNull(4),
+                    )
+                }
 
                 ARTIKEL -> {
                     felder.pruefen(7) ?: return@forEach
@@ -101,6 +115,7 @@ object Sicherungsformat {
                         werbepreisBis = felder.leerAlsNull(6)?.toLongOrNull(),
                         erfasstAm = felder[7].toLongOrNull() ?: 0L,
                         erfasstVon = felder.leerAlsNull(8),
+                        marktSchluessel = felder.leerAlsNull(9),
                     )
                 }
 
@@ -114,6 +129,7 @@ object Sicherungsformat {
                         kartenY = felder.leerAlsNull(6)?.toFloatOrNull(),
                         erfasstAm = felder[7].toLongOrNull() ?: 0L,
                         erfasstVon = felder.leerAlsNull(8),
+                        marktSchluessel = felder.leerAlsNull(9),
                     )
                 }
 
@@ -145,7 +161,7 @@ object Sicherungsformat {
             )
 
             else -> Abruf.Erfolg(
-                Sicherung(erstelltAm, artikel, preise, standorte, verlauf, merkposten)
+                Sicherung(erstelltAm, maerkte, artikel, preise, standorte, verlauf, merkposten)
             )
         }
     }
@@ -218,6 +234,7 @@ internal fun String.alsBezug(): Artikelbezug? = when {
 
 data class Sicherung(
     val erstelltAm: Long,
+    val maerkte: List<GesicherterMarkt> = emptyList(),
     val artikel: List<GesicherterArtikel> = emptyList(),
     val preise: List<GesicherterPreis> = emptyList(),
     val standorte: List<GesicherterStandort> = emptyList(),
@@ -228,6 +245,17 @@ data class Sicherung(
         get() = artikel.isEmpty() && preise.isEmpty() && standorte.isEmpty() &&
             verlauf.isEmpty() && merkposten.isEmpty()
 }
+
+/**
+ * Ein Markt, wie er in der Datei steht. Der Schluessel ist der normalisierte Name: die
+ * Markt-Id waere wie bei den Artikeln nur innerhalb einer Installation gueltig.
+ */
+data class GesicherterMarkt(
+    val schluessel: String,
+    val kette: String,
+    val name: String,
+    val ort: String?,
+)
 
 /** Nur selbst angelegte Artikel — Katalogartikel stecken schon in der App. */
 data class GesicherterArtikel(
@@ -249,6 +277,8 @@ data class GesicherterPreis(
     val werbepreisBis: Long?,
     val erfasstAm: Long,
     val erfasstVon: String?,
+    /** `null` in Dateien aus Format 1 — damals gab es nur einen Markt. */
+    val marktSchluessel: String? = null,
 )
 
 data class GesicherterStandort(
@@ -260,6 +290,8 @@ data class GesicherterStandort(
     val kartenY: Float?,
     val erfasstAm: Long,
     val erfasstVon: String?,
+    /** `null` in Dateien aus Format 1 — damals gab es nur einen Markt. */
+    val marktSchluessel: String? = null,
 )
 
 data class GesicherterVerlauf(

@@ -7,6 +7,8 @@ import de.artikelfinder.app.data.ArtikelRepository
 import de.artikelfinder.app.data.Aufbauzustand
 import de.artikelfinder.app.data.Katalogaufbau
 import de.artikelfinder.app.data.local.ArtikelDatenbank
+import de.artikelfinder.app.data.markt.Ketten
+import de.artikelfinder.app.data.markt.Marktverwaltung
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -164,8 +166,56 @@ class SicherungsdienstTest {
         assertEquals(ende, neu.repository.letztesAktionsende())
     }
 
+    @Test
+    fun `Preise mehrerer Maerkte bleiben getrennt`() = runTest {
+        val alt = installation()
+        val artikel = alt.repository.perEan(MILCH).erfolg()!!.artikel.id
+        alt.repository.preisErfassen(artikel, 1.49)
+        alt.repository.standortErfassen(artikel, gang = "3")
+
+        alt.maerkte.anlegen(Ketten.REWE, ort = "Marburg")
+        alt.repository.preisErfassen(artikel, 1.79)
+        alt.repository.standortErfassen(artikel, gang = "7")
+
+        val datei = Sicherungsformat.schreiben(alt.dienst.erstellen())
+
+        // Auf dem neuen Geraet existiert noch keiner der beiden Maerkte unter diesem Namen.
+        val neu = installation(kette = Ketten.LIDL, ort = "Wetzlar")
+        neu.dienst.einspielen(Sicherungsformat.lesen(datei).erfolg())
+
+        val wieder = neu.datenbank.stammdatenDao().maerkte().associateBy { it.name }
+        assertEquals(3, wieder.size)
+
+        // Beide Erfassungen muessen wieder zu ihrem eigenen Markt gehoeren — verschmelzen
+        // sie, sieht der Nutzer im Kaufland den Rewe-Preis.
+        neu.maerkte.waehlen(wieder.getValue("Kaufland Gießen").id)
+        assertEquals(1.49, neu.repository.perEan(MILCH).erfolg()!!.artikel.preis!!.preis, 0.001)
+        assertEquals("3", neu.repository.perEan(MILCH).erfolg()!!.artikel.standort!!.gang)
+
+        neu.maerkte.waehlen(wieder.getValue("Rewe Marburg").id)
+        assertEquals(1.79, neu.repository.perEan(MILCH).erfolg()!!.artikel.preis!!.preis, 0.001)
+        assertEquals("7", neu.repository.perEan(MILCH).erfolg()!!.artikel.standort!!.gang)
+    }
+
+    @Test
+    fun `Ein bereits vorhandener Markt wird nicht doppelt angelegt`() = runTest {
+        val alt = installation()
+        alt.repository.preisErfassen(alt.repository.perEan(MILCH).erfolg()!!.artikel.id, 1.49)
+        val datei = Sicherungsformat.schreiben(alt.dienst.erstellen())
+
+        val neu = installation()
+        neu.dienst.einspielen(Sicherungsformat.lesen(datei).erfolg())
+
+        assertEquals(1, neu.datenbank.stammdatenDao().maerkte().size)
+        assertEquals(1.49, neu.repository.perEan(MILCH).erfolg()!!.artikel.preis!!.preis, 0.001)
+    }
+
     /** Eine frische Installation: eigene Datenbank, eigener Katalogaufbau, eigene Ids. */
-    private suspend fun installation(katalog: String = KATALOG): Installation {
+    private suspend fun installation(
+        katalog: String = KATALOG,
+        kette: String = Ketten.KAUFLAND,
+        ort: String? = "Gießen",
+    ): Installation {
         val datenbank = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext(),
             ArtikelDatenbank::class.java,
@@ -177,13 +227,22 @@ class SicherungsdienstTest {
         aufbau.sicherstellen()
         check(aufbau.zustand.value is Aufbauzustand.Fertig) { "Katalogaufbau fehlgeschlagen" }
 
-        return Installation(datenbank, ArtikelRepository(datenbank), Sicherungsdienst(datenbank))
+        val maerkte = Marktverwaltung(datenbank)
+        maerkte.anlegen(kette, ort = ort)
+
+        return Installation(
+            datenbank,
+            ArtikelRepository(datenbank, maerkte),
+            Sicherungsdienst(datenbank, maerkte),
+            maerkte,
+        )
     }
 
     private data class Installation(
         val datenbank: ArtikelDatenbank,
         val repository: ArtikelRepository,
         val dienst: Sicherungsdienst,
+        val maerkte: Marktverwaltung,
     )
 
     private companion object {

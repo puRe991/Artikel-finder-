@@ -1,7 +1,9 @@
 # Artikel-Finder
 
-Artikelsuche für den Kaufland Gießen: Name, EAN, Normalpreis, laufender Werbepreis und der
-Gang, in dem der Artikel steht.
+Artikelsuche für den Supermarkt: Name, EAN, Normalpreis, laufender Werbepreis und der Gang,
+in dem der Artikel steht. Beim ersten Start wählst du deinen Markt — Kaufland, Rewe, Aldi,
+Lidl, Edeka, dm und ein Dutzend weitere. Mehrere Märkte lassen sich nebeneinander führen
+und umschalten.
 
 **Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
 Der Artikelkatalog — gut 19.000 reale Produkte aus
@@ -21,9 +23,10 @@ android/                              Die App — Kotlin, Jetpack Compose, Room
   app/src/main/assets/                Der ausgelieferte Artikelkatalog
   app/src/main/java/de/artikelfinder/app/
     data/                             Room-Datenbank, Repository, Katalogaufbau
+    data/markt/                       Ketten, Eigenmarken, Marktwahl
     data/sicherung/                   Sicherungsdatei der eigenen Erfassungen
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | sicherung
-  app/src/test/                       49 Tests gegen echtes SQLite (Robolectric)
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | markt | sicherung
+  app/src/test/                       66 Tests gegen echtes SQLite (Robolectric)
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
@@ -45,7 +48,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew :app:testDebugUnitTest   # 49 Tests
+./gradlew :app:testDebugUnitTest   # 66 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -127,13 +130,29 @@ falschen Gang.
 Anfang an in beiden Tabellen. Der Ausbau auf weitere Filialen kostet damit keine
 Datenmigration.
 
+**Eigenmarken hängen an der normalisierten Marke, nicht am Markennamen.** Im Katalog steht
+K-Classic in sechs Schreibweisen — K-Classic, K Classic, K-CLASSIC, K classic, K-classic,
+k classic — zusammen fast 3.000 Artikel. Über dieselbe Normalisierung wie bei der Suche
+fallen sie auf einen Schlüssel zusammen. Insgesamt ordnet die Liste 198 Schreibweisen zu und
+erfasst damit 8.126 der 18.913 Artikel mit Marke; für einen Kaufland sind davon 3.724
+fremd. Zugeordnet wird nur, was sicher exklusiv ist: Alnatura, Rapunzel oder dennree stehen
+bei mehreren Händlern im Regal und bleiben deshalb überall sichtbar. Im Zweifel lieber ein
+fremder Artikel zu viel als ein eigener zu wenig — ein überflüssiger Treffer kostet einen
+Blick, ein fehlender einen Gang durch den Laden.
+
+**Die Kette steht als Spalte am Artikel, nicht als Regel in der Abfrage.** Sonst müsste
+jede Suche zweihundert Markennamen als Parameter mitschleppen. Gefüllt wird die Spalte von
+`Markenzuordnung` beim Start, gesteuert über eine Zuordnungsversion im Merkposten: wächst
+die Markenliste, kostet das keine Schemaversion, sondern nur eine höhere Zahl.
+
 **Die Sicherung bezieht sich auf die EAN, nicht auf die Artikel-Id.** Der Katalogaufbau
 vergibt bei jeder Installation neue Ids — eine Sicherung, die daran hinge, wäre auf einem
 zweiten Gerät wertlos, und genau dafür macht man eine. Selbst angelegte Artikel haben oft
 keine EAN; sie behalten deshalb ihre Id und werden mit ihr wieder angelegt. Das macht das
 Einlesen nebenbei wiederholbar: jeder Datensatz bringt seinen Schlüssel mit, ein zweiter
 Lauf derselben Datei ändert nichts. Der Katalog selbst steht nicht in der Datei — er liegt
-in der App.
+in der App. Märkte hängen an ihrem normalisierten Namen — aus demselben Grund, und damit
+ein Kaufland-Preis nach dem Einspielen nicht im Rewe landet.
 
 **Erfassungen werden angehängt, nie überschrieben.** Der jüngste Eintrag pro
 (Artikel, Markt) ist der aktuelle. Die Preishistorie und der „steht jetzt in Gang 3
@@ -157,6 +176,21 @@ Merkposten nicht.
 hintereinander. Bei verknitterten Etiketten sind Einzelbild-Fehlerkennungen häufig, und ein
 falscher Barcode führt direkt zum falschen Artikel. Die Auswertung läuft über ML Kit
 vollständig auf dem Gerät.
+
+## Märkte
+
+Beim ersten Start wählst du eine Kette; optional kommt ein Ort dazu, damit sich zwei
+Filialen unterscheiden lassen („Kaufland Gießen" und „Kaufland Wetzlar"). Weitere Märkte
+ergänzt du über *Weitere Aktionen → Markt wechseln*.
+
+Der gewählte Markt entscheidet über zwei Dinge:
+
+- **Preise und Gänge.** Sie hängen am Markt, nicht am Artikel. Dieselbe Butter steht im
+  Kaufland in Gang 3 und im Rewe in Gang 7, zu verschiedenen Preisen. Beim Umschalten zeigt
+  die App die Erfassungen des jeweiligen Markts.
+- **Das Sortiment.** Eigenmarken stehen nur in den Läden ihrer Kette. Im Kaufland gibt es
+  kein „ja!" und kein „Milbona" — beide verschwinden aus der Trefferliste. Der Filterchip
+  „Auch fremde Eigenmarken" holt sie zurück, falls eine Zuordnung danebenliegt.
 
 ## Sicherung
 
@@ -184,7 +218,7 @@ Fehlt ein Schritt, schlägt der Test fehl — statt der App beim nächsten Updat
 ## Tests
 
 ```bash
-cd android && ./gradlew :app:testDebugUnitTest   # 49 Tests
+cd android && ./gradlew :app:testDebugUnitTest   # 66 Tests
 cd backend && dotnet test                        # 79 Tests
 ```
 

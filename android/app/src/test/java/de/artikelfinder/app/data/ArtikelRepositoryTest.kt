@@ -3,6 +3,8 @@ package de.artikelfinder.app.data
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import de.artikelfinder.app.data.local.ArtikelDatenbank
+import de.artikelfinder.app.data.markt.Ketten
+import de.artikelfinder.app.data.markt.Marktverwaltung
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -24,6 +26,7 @@ import org.robolectric.RobolectricTestRunner
 class ArtikelRepositoryTest {
 
     private lateinit var datenbank: ArtikelDatenbank
+    private lateinit var maerkte: Marktverwaltung
     private lateinit var repository: ArtikelRepository
 
     @Before
@@ -33,13 +36,17 @@ class ArtikelRepositoryTest {
             ArtikelDatenbank::class.java,
         ).allowMainThreadQueries().build()
 
-        repository = ArtikelRepository(datenbank)
+        maerkte = Marktverwaltung(datenbank)
+        repository = ArtikelRepository(datenbank, maerkte)
 
         // Stammdaten wie beim echten Start anlegen.
         val aufbau = katalogaufbau()
         aufbau.sicherstellen()
         val zustand = aufbau.zustand.value
         check(zustand is Aufbauzustand.Fertig) { "Katalogaufbau fehlgeschlagen: " + zustand }
+
+        // Den Markt waehlt seit der Marktauswahl der Nutzer — im Test eben hier.
+        maerkte.anlegen(Ketten.KAUFLAND, ort = "Gießen")
     }
 
     @After
@@ -103,7 +110,7 @@ class ArtikelRepositoryTest {
     fun `EAN eines Katalogartikels kollidiert ebenfalls`() = runTest {
         // Der Katalog bringt bereits 15.000 EANs mit — eine davon darf nicht doppelt gehen.
         val vorhandene = datenbank.artikelDao()
-            .suchen(0, "%", "%", "%", emptyList(), 0, 0, 0, 0, 1, 1, 0)
+            .suchen(0, "%", "%", "%", emptyList(), 0, 0, 0, 1, null, 0, maerkte.aktuelleId(), 1, 0)
             .first().artikel.ean!!
 
         val ergebnis = repository.anlegen(name = "Dublette", ean = vorhandene)
@@ -273,6 +280,34 @@ class ArtikelRepositoryTest {
         assertTrue(datenbank.preisDao().fuerArtikel(id).isEmpty())
         assertTrue(datenbank.standortDao().fuerArtikel(id).isEmpty())
         assertTrue(datenbank.verlaufDao().fuerArtikel(id).isEmpty())
+    }
+
+    @Test
+    fun `Die Markenzuordnung greift im echten Katalog`() = runTest {
+        // Am ausgelieferten Katalog, nicht an einer Attrappe: die Schreibweisen dort sind
+        // der eigentliche Gegner. Allein K-Classic steht in sechs Fassungen darin.
+        val zugeordnet = datenbank.artikelDao().alleMarken()
+            .count { Ketten.ketteFuerMarke(it) != null }
+        assertTrue("Erwartet wurden zugeordnete Marken, waren $zugeordnet", zugeordnet > 20)
+
+        val fremde = datenbank.artikelDao().anzahlFremderEigenmarken(Ketten.KAUFLAND)
+        assertTrue(
+            "Aldi, Edeka, Lidl und Rewe liefern zusammen ueber tausend Artikel, " +
+                "die im Kaufland nicht stehen — waren $fremde",
+            fremde > 1_000,
+        )
+
+        // Die Suche muss davon spuerbar profitieren. Verglichen wird die Trefferzahl, nicht
+        // die Listenlaenge: die Trefferliste bricht bei 50 ab und beide Abfragen liefen
+        // sonst voll — der Unterschied waere unsichtbar.
+        val mitFremden = repository.anzahlTreffer("milch", fremdeEigenmarken = true)
+        val ohneFremde = repository.anzahlTreffer("milch")
+        assertTrue("$ohneFremde von $mitFremden Treffern", ohneFremde < mitFremden)
+
+        assertTrue(
+            "Fremde Eigenmarken duerfen nicht in der Trefferliste stehen",
+            repository.suchen("milch").erfolg().none { it.marke == "Milbona" || it.marke == "ja!" },
+        )
     }
 
     @Test

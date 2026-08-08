@@ -36,6 +36,19 @@ private const val AKTUELLER_STAND = """
     )
 """
 
+/**
+ * Eigenmarken stehen nur in den Läden ihrer Kette. Ein Artikel ist sichtbar, wenn er keiner
+ * Kette gehört (Herstellermarken stehen überall) oder zur Kette des gewählten Markts.
+ *
+ * Ist kein Markt gewählt oder die Zuordnung abgeschaltet, hebt `:fremdeZeigen` die
+ * Bedingung auf — lieber ein fremder Artikel zu viel als ein eigener zu wenig.
+ */
+private const val OHNE_FREMDE_EIGENMARKEN = """
+    :fremdeZeigen = 1
+    OR a.eigenmarke_kette IS NULL
+    OR a.eigenmarke_kette = :kette
+"""
+
 @Dao
 interface ArtikelDao {
 
@@ -66,6 +79,7 @@ interface ArtikelDao {
                 p.werbepreis IS NOT NULL
                 AND (p.werbepreis_von IS NULL OR p.werbepreis_von <= :jetzt)
                 AND (p.werbepreis_bis IS NULL OR p.werbepreis_bis >= :jetzt)))
+          AND ($OHNE_FREMDE_EIGENMARKEN)
         ORDER BY a.name COLLATE NOCASE
         LIMIT :grenze OFFSET :versatz
         """
@@ -79,6 +93,8 @@ interface ArtikelDao {
         kategorieAnzahl: Int,
         nurMitStandort: Int,
         nurMitWerbepreis: Int,
+        fremdeZeigen: Int,
+        kette: String?,
         jetzt: Long,
         marktId: Int,
         grenze: Int,
@@ -101,6 +117,7 @@ interface ArtikelDao {
                 p.werbepreis IS NOT NULL
                 AND (p.werbepreis_von IS NULL OR p.werbepreis_von <= :jetzt)
                 AND (p.werbepreis_bis IS NULL OR p.werbepreis_bis >= :jetzt)))
+          AND ($OHNE_FREMDE_EIGENMARKEN)
         """
     )
     suspend fun anzahlTreffer(
@@ -112,6 +129,8 @@ interface ArtikelDao {
         kategorieAnzahl: Int,
         nurMitStandort: Int,
         nurMitWerbepreis: Int,
+        fremdeZeigen: Int,
+        kette: String?,
         jetzt: Long,
         marktId: Int,
     ): Int
@@ -170,6 +189,25 @@ interface ArtikelDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun einfuegenWennNeu(artikel: ArtikelEintrag): Long
+
+    // --- Markenzuordnung ---
+
+    /**
+     * Die Schreibweisen, wie sie im Katalog stehen. „K-Classic" kommt in sechs Fassungen
+     * vor; welche davon zur selben Marke gehören, entscheidet erst die Normalisierung in
+     * Kotlin — SQLite kann sie nicht.
+     */
+    @Query("SELECT DISTINCT marke FROM artikel WHERE marke IS NOT NULL AND marke != ''")
+    suspend fun alleMarken(): List<String>
+
+    @Query("UPDATE artikel SET eigenmarke_kette = :kette WHERE marke IN (:marken)")
+    suspend fun eigenmarkeSetzen(kette: String, marken: List<String>)
+
+    @Query("UPDATE artikel SET eigenmarke_kette = NULL")
+    suspend fun eigenmarkenLeeren()
+
+    @Query("SELECT COUNT(*) FROM artikel WHERE eigenmarke_kette IS NOT NULL AND eigenmarke_kette != :kette")
+    suspend fun anzahlFremderEigenmarken(kette: String): Int
 
     /**
      * Laufende Angebote, das am schnellsten ablaufende zuerst. Angebote ohne Enddatum
@@ -276,11 +314,23 @@ interface StammdatenDao {
     @Query("SELECT * FROM markt ORDER BY name")
     suspend fun maerkte(): List<MarktEintrag>
 
+    @Query("SELECT * FROM markt ORDER BY name")
+    fun maerkteStrom(): Flow<List<MarktEintrag>>
+
+    @Query("SELECT * FROM markt WHERE id = :id")
+    suspend fun markt(id: Int): MarktEintrag?
+
     @Query("SELECT COUNT(*) FROM markt")
     suspend fun anzahlMaerkte(): Int
 
     @Insert
     suspend fun marktEinfuegen(markt: MarktEintrag): Long
+
+    @Update
+    suspend fun marktAktualisieren(markt: MarktEintrag)
+
+    @Query("DELETE FROM markt WHERE id = :id")
+    suspend fun marktLoeschen(id: Int)
 
     @Transaction
     suspend fun kategorienAnlegen(eintraege: List<KategorieEintrag>): List<Long> =

@@ -12,6 +12,7 @@ object Ziele {
     const val GAENGE = "gaenge"
     const val ANGEBOTE = "angebote"
     const val SICHERUNG = "sicherung"
+    const val MAERKTE = "maerkte"
 
     const val DETAIL = "artikel/{artikelId}"
     fun detail(artikelId: String) = "artikel/$artikelId"

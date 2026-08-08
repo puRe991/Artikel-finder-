@@ -2,6 +2,7 @@ package de.artikelfinder.app.data.sicherung
 
 import de.artikelfinder.app.data.Abruf
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,7 +73,7 @@ class SicherungsformatTest {
     @Test
     fun `Eine Datei aus einer neueren App wird abgelehnt statt halb gelesen`() {
         val text = Sicherungsformat.schreiben(beispiel())
-            .replace("format\t1", "format\t99")
+            .replace("format\t${Sicherungsformat.FORMATVERSION}", "format\t99")
 
         val ergebnis = Sicherungsformat.lesen(text)
 
@@ -96,6 +97,40 @@ class SicherungsformatTest {
     }
 
     @Test
+    fun `Eine Datei aus Format 1 bleibt lesbar`() {
+        // So sah eine Sicherung aus, als es nur einen Markt gab: keine K-Zeilen, und die
+        // Preiszeile endet nach dem Erfasser. Wer die App aktualisiert, darf seine alte
+        // Sicherung nicht verlieren.
+        val alt = listOf(
+            "# Artikel-Finder",
+            "format\t1",
+            "erstellt\t1700000000000",
+            "P\tp1\te:4337256123456\t1.49\t1.29\t\t1900000000000\t1700000000000\ttobias",
+            "S\ts1\te:4337256123456\t7\tunten links\t\t\t1700000000000\ttobias",
+        ).joinToString("\n")
+
+        val gelesen = Sicherungsformat.lesen(alt).erfolg()
+
+        assertEquals(1, gelesen.preise.size)
+        assertEquals(1.49, gelesen.preise.first().wert, 0.001)
+        assertEquals("tobias", gelesen.preise.first().erfasstVon)
+        // Ohne Marktangabe: die Erfassungen landen beim Einspielen im gewaehlten Markt.
+        assertNull(gelesen.preise.first().marktSchluessel)
+        assertNull(gelesen.standorte.first().marktSchluessel)
+        assertTrue(gelesen.maerkte.isEmpty())
+    }
+
+    @Test
+    fun `Maerkte ueberstehen den Umlauf`() {
+        val original = beispiel()
+
+        val gelesen = Sicherungsformat.lesen(Sicherungsformat.schreiben(original)).erfolg()
+
+        assertEquals(original.maerkte, gelesen.maerkte)
+        assertEquals("kaufland giessen", gelesen.preise.first().marktSchluessel)
+    }
+
+    @Test
     fun `Eine leere Sicherung bleibt eine leere Sicherung`() {
         val leer = Sicherung(erstelltAm = 1_700_000_000_000)
 
@@ -107,6 +142,10 @@ class SicherungsformatTest {
 
     private fun beispiel() = Sicherung(
         erstelltAm = 1_700_000_000_000,
+        maerkte = listOf(
+            GesicherterMarkt("kaufland giessen", "kaufland", "Kaufland Gießen", "Gießen"),
+            GesicherterMarkt("rewe marburg", "rewe", "Rewe Marburg", "Marburg"),
+        ),
         artikel = listOf(
             GesicherterArtikel(
                 id = "a2", ean = null, name = "Lose Ware vom Markt",
@@ -118,11 +157,13 @@ class SicherungsformatTest {
                 id = "p1", bezug = Artikelbezug.PerEan("4337256123456"), wert = 1.49,
                 werbepreis = 1.29, werbepreisVon = null, werbepreisBis = 1_900_000_000_000,
                 erfasstAm = 1_700_000_000_000, erfasstVon = "tobias",
+                marktSchluessel = "kaufland giessen",
             ),
             GesicherterPreis(
                 id = "p2", bezug = Artikelbezug.PerId("a2"), wert = 2.99,
                 werbepreis = null, werbepreisVon = null, werbepreisBis = null,
                 erfasstAm = 1_700_000_001_000, erfasstVon = null,
+                marktSchluessel = "rewe marburg",
             ),
         ),
         standorte = listOf(
@@ -130,6 +171,7 @@ class SicherungsformatTest {
                 id = "s1", bezug = Artikelbezug.PerEan("4337256123456"), gang = "7",
                 regalBeschreibung = "unten links", kartenX = null, kartenY = null,
                 erfasstAm = 1_700_000_000_000, erfasstVon = "tobias",
+                marktSchluessel = "kaufland giessen",
             )
         ),
         verlauf = listOf(

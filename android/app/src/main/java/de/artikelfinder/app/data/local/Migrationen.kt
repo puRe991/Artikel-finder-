@@ -1,6 +1,7 @@
 package de.artikelfinder.app.data.local
 
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Alle Schemaschritte, in der Reihenfolge ihrer Versionen.
@@ -22,4 +23,23 @@ import androidx.room.migration.Migration
  * Vergisst man Schritt 3, schlägt `MigrationTest` fehl — nicht erst das Handy des Nutzers
  * beim nächsten Update.
  */
-val MIGRATIONEN: Array<Migration> = emptyArray()
+val MIGRATIONEN: Array<Migration> = arrayOf(VonEinsAufZwei)
+
+/**
+ * Die Kette, in der es einen Artikel exklusiv gibt.
+ *
+ * Nur die Spalte, nicht der Inhalt: gefüllt wird sie von `Markenzuordnung`, die beim Start
+ * läuft und über einen Merkposten weiß, ob sie schon dran war. Damit bleibt diese Migration
+ * für immer richtig — wächst die Markenliste später, kostet das keine neue Schemaversion,
+ * sondern nur eine höhere Zuordnungsversion.
+ */
+private object VonEinsAufZwei : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE artikel ADD COLUMN eigenmarke_kette TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_artikel_eigenmarke_kette ON artikel (eigenmarke_kette)")
+
+        // Bis hierher gab es genau einen Markt, angelegt mit dem Anzeigenamen der Kette.
+        // Ab jetzt steht in der Spalte der Schlüssel, über den die Eigenmarken hängen.
+        db.execSQL("UPDATE markt SET kette = 'kaufland' WHERE kette = 'Kaufland'")
+    }
+}

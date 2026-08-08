@@ -55,6 +55,7 @@ fun SucheBildschirm(
     beiAngeboten: () -> Unit,
     beiNeuemArtikel: () -> Unit,
     beiSicherung: () -> Unit,
+    beiMaerkten: () -> Unit,
     viewModel: SucheViewModel = hiltViewModel(),
 ) {
     val zustand by viewModel.zustand.collectAsStateWithLifecycle()
@@ -63,7 +64,9 @@ fun SucheBildschirm(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Artikel-Finder") },
+                // Der Marktname statt des App-Namens: welcher Laden gilt, entscheidet
+                // ueber jeden Preis und jeden Gang auf diesem Bildschirm.
+                title = { Text(zustand.marktname) },
                 actions = {
                     IconButton(onClick = beiAngeboten) {
                         Icon(Icons.Default.LocalOffer, contentDescription = "Angebote")
@@ -77,6 +80,13 @@ fun SucheBildschirm(
                         Icon(Icons.Default.MoreVert, contentDescription = "Weitere Aktionen")
                     }
                     DropdownMenu(expanded = menueOffen, onDismissRequest = { menueOffen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Markt wechseln") },
+                            onClick = {
+                                menueOffen = false
+                                beiMaerkten()
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text("Sicherung") },
                             onClick = {
@@ -173,6 +183,14 @@ private fun Filterleiste(zustand: SucheZustand, viewModel: SucheViewModel) {
             label = { Text("Nur Angebote") },
             colors = FilterChipDefaults.filterChipColors(),
         )
+
+        if (zustand.zeigtEigenmarkenfilter) {
+            FilterChip(
+                selected = zustand.fremdeEigenmarken,
+                onClick = viewModel::fremdeEigenmarkenUmschalten,
+                label = { Text("Auch fremde Eigenmarken") },
+            )
+        }
 
         FilterChip(
             selected = zustand.gewaehlteKategorieId == null,

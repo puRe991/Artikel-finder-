@@ -1,14 +1,17 @@
 package de.artikelfinder.app.data
 
 import de.artikelfinder.app.data.Katalogaufbau.Companion.QUELLE_NUTZER
-import de.artikelfinder.app.data.Katalogaufbau.Companion.STANDARD_MARKT
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.ArtikelMitStand
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
+import de.artikelfinder.app.data.markt.Ketten
+import de.artikelfinder.app.data.markt.Marktverwaltung
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import java.util.Locale
 import java.util.UUID
@@ -28,8 +31,12 @@ sealed interface Abruf<out T> {
  * angehängt statt überschrieben, der jüngste Eintrag je Markt ist der aktuelle, und jede
  * Änderung landet im Verlauf.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
-class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenbank) {
+class ArtikelRepository @Inject constructor(
+    private val datenbank: ArtikelDatenbank,
+    private val maerkte: Marktverwaltung,
+) {
 
     private val artikelDao get() = datenbank.artikelDao()
     private val preisDao get() = datenbank.preisDao()
@@ -39,7 +46,11 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
 
     /** Laufende Angebote, das am schnellsten ablaufende zuerst. */
     fun aktiveAngebote(): Flow<List<Artikel>> =
-        artikelDao.aktiveAngebote(STANDARD_MARKT, System.currentTimeMillis())
+        // Ein Marktwechsel muss die Liste neu ziehen — die Angebote gelten je Markt.
+        maerkte.aktuell
+            .flatMapLatest { markt ->
+                artikelDao.aktiveAngebote(markt?.id ?: KEIN_MARKT, System.currentTimeMillis())
+            }
             .map { liste -> liste.map { it.zuModell() } }
 
     /**
@@ -55,12 +66,15 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         )
 
     fun zuletztBearbeitet(): Flow<List<Artikel>> =
-        artikelDao.zuletztBearbeitet(STANDARD_MARKT).map { liste -> liste.map { it.zuModell() } }
+        maerkte.aktuell
+            .flatMapLatest { markt -> artikelDao.zuletztBearbeitet(markt?.id ?: KEIN_MARKT) }
+            .map { liste -> liste.map { it.zuModell() } }
 
     suspend fun suchen(
         suchbegriff: String?,
         kategorieId: Int? = null,
         nurMitWerbepreis: Boolean = false,
+        fremdeEigenmarken: Boolean = false,
         seite: Int = 1,
         seitengroesse: Int = 50,
     ): Abruf<List<Artikel>> {
@@ -80,8 +94,10 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             kategorieAnzahl = kategorien.size,
             nurMitStandort = 0,
             nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+            fremdeZeigen = fremdeZeigen(fremdeEigenmarken),
+            kette = maerkte.aktuelleKette(),
             jetzt = System.currentTimeMillis(),
-            marktId = STANDARD_MARKT,
+            marktId = marktId(),
             grenze = seitengroesse,
             versatz = (seite - 1) * seitengroesse,
         )
@@ -93,6 +109,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         suchbegriff: String?,
         kategorieId: Int? = null,
         nurMitWerbepreis: Boolean = false,
+        fremdeEigenmarken: Boolean = false,
     ): Int {
         val tokens = Suchtext.normalisieren(suchbegriff).split(' ').filter { it.isNotBlank() }.take(3)
         val muster = List(3) { i -> tokens.getOrNull(i)?.let { "%$it%" } ?: "%" }
@@ -105,13 +122,23 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             kategorieAnzahl = kategorien.size,
             nurMitStandort = 0,
             nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
+            fremdeZeigen = fremdeZeigen(fremdeEigenmarken),
+            kette = maerkte.aktuelleKette(),
             jetzt = System.currentTimeMillis(),
-            marktId = STANDARD_MARKT,
+            marktId = marktId(),
         )
     }
 
+    /**
+     * Ohne bekannte Kette bleibt der Filter aus. Sonst verschwänden bei einem Markt ohne
+     * Zuordnung („Anderer Markt") sämtliche Eigenmarken auf einmal — und das ist mit
+     * Sicherheit falscher als ein fremder Treffer zu viel.
+     */
+    private fun fremdeZeigen(gewuenscht: Boolean): Int =
+        if (gewuenscht || maerkte.aktuelleKette().let { it == null || it == Ketten.SONSTIGE }) 1 else 0
+
     suspend fun holen(id: String): Abruf<ArtikelDetail> {
-        val artikel = artikelDao.holen(id, STANDARD_MARKT)
+        val artikel = artikelDao.holen(id, marktId())
             ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
 
         return Abruf.Erfolg(
@@ -127,7 +154,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     /** Barcode-Lookup. `null` heißt "unbekannt" — die App bietet dann das Anlegen an. */
     suspend fun perEan(ean: String): Abruf<ArtikelDetail?> {
         val normalisiert = Ean.normalisieren(ean) ?: return Abruf.Erfolg(null)
-        val treffer = artikelDao.perEan(normalisiert, STANDARD_MARKT) ?: return Abruf.Erfolg(null)
+        val treffer = artikelDao.perEan(normalisiert, marktId()) ?: return Abruf.Erfolg(null)
         return holen(treffer.artikel.id) as Abruf<ArtikelDetail?>
     }
 
@@ -293,7 +320,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     }
 
     suspend fun gaenge(): Abruf<List<Gang>> {
-        val zeilen = artikelDao.gaenge(STANDARD_MARKT)
+        val zeilen = artikelDao.gaenge(marktId())
 
         return Abruf.Erfolg(
             zeilen
@@ -304,11 +331,12 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     }
 
     suspend fun artikelImGang(gang: String): Abruf<List<Artikel>> =
-        Abruf.Erfolg(artikelDao.imGang(gang, STANDARD_MARKT).map { it.zuModell() })
+        Abruf.Erfolg(artikelDao.imGang(gang, marktId()).map { it.zuModell() })
 
+    /** Der gewählte Markt, nicht irgendeiner — es können mehrere angelegt sein. */
     suspend fun markt(): Abruf<Markt> {
-        val markt = stammdatenDao.maerkte().firstOrNull()
-            ?: return Abruf.Fehler("Es ist kein Markt angelegt.")
+        val markt = maerkte.aktuell.value
+            ?: return Abruf.Fehler("Es ist kein Markt gewählt.")
 
         return Abruf.Erfolg(Markt(markt.id, markt.name, markt.ort))
     }
@@ -321,12 +349,12 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         erfasstVon: String?,
         jetzt: Long,
     ): PreisEintrag {
-        val vorheriger = preisDao.aktuellster(artikelId, STANDARD_MARKT)
+        val vorheriger = preisDao.aktuellster(artikelId, marktId())
 
         val eintrag = PreisEintrag(
             id = UUID.randomUUID().toString(),
             artikelId = artikelId,
-            marktId = STANDARD_MARKT,
+            marktId = marktId(),
             wert = preis,
             werbepreis = werbepreis,
             werbepreisVon = null,
@@ -360,7 +388,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         val eintrag = StandortEintrag(
             id = UUID.randomUUID().toString(),
             artikelId = artikelId,
-            marktId = STANDARD_MARKT,
+            marktId = marktId(),
             gang = gang.trim(),
             regalBeschreibung = regalBeschreibung.leerAlsNull(),
             kartenX = null,
@@ -422,8 +450,14 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
 
     private fun String?.leerAlsNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
+    /** Der gerade gewaehlte Markt. Preise und Gaenge haengen daran. */
+    private fun marktId(): Int = maerkte.aktuelleId()
+
     private companion object {
         const val MERKPOSTEN_AKTIONSENDE = "aktionsende"
+
+        /** Trifft keinen Markt — solange keiner gewaehlt ist, bleiben die Listen leer. */
+        const val KEIN_MARKT = 0
     }
 }
 

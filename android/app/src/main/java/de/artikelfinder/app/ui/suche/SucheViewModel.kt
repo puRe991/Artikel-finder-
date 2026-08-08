@@ -7,6 +7,9 @@ import de.artikelfinder.app.data.Abruf
 import de.artikelfinder.app.data.Artikel
 import de.artikelfinder.app.data.ArtikelRepository
 import de.artikelfinder.app.data.Kategorie
+import de.artikelfinder.app.data.local.MarktEintrag
+import de.artikelfinder.app.data.markt.Ketten
+import de.artikelfinder.app.data.markt.Marktverwaltung
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,9 +29,20 @@ data class SucheZustand(
     val kategorien: List<Kategorie> = emptyList(),
     val gewaehlteKategorieId: Int? = null,
     val nurMitWerbepreis: Boolean = false,
+    val fremdeEigenmarken: Boolean = false,
+    val markt: MarktEintrag? = null,
     val laedt: Boolean = false,
     val fehler: String? = null,
 ) {
+    /**
+     * Ohne bekannte Kette gibt es nichts auszublenden — dann waere der Schalter nur ein
+     * Knopf ohne Wirkung.
+     */
+    val zeigtEigenmarkenfilter: Boolean
+        get() = markt?.kette?.let { it != Ketten.SONSTIGE } == true
+
+    val marktname: String
+        get() = markt?.name ?: "Artikel-Finder"
     /** Ohne Filter und ohne Suchbegriff zeigt der Bildschirm die zuletzt gesehenen Artikel. */
     val zeigtVerlauf: Boolean
         get() = suchbegriff.isBlank() && gewaehlteKategorieId == null && !nurMitWerbepreis
@@ -38,6 +52,7 @@ data class SucheZustand(
 @HiltViewModel
 class SucheViewModel @Inject constructor(
     private val repository: ArtikelRepository,
+    private val maerkte: Marktverwaltung,
 ) : ViewModel() {
 
     private val _zustand = MutableStateFlow(SucheZustand())
@@ -56,6 +71,15 @@ class SucheViewModel @Inject constructor(
 
         repository.zuletztBearbeitet()
             .onEach { liste -> _zustand.value = _zustand.value.copy(zuletztBearbeitet = liste) }
+            .launchIn(viewModelScope)
+
+        // Ein Marktwechsel aendert Preise, Gaenge und das Sortiment — die Trefferliste
+        // muss danach neu gezogen werden.
+        maerkte.aktuell
+            .onEach { markt ->
+                _zustand.value = _zustand.value.copy(markt = markt)
+                suchen()
+            }
             .launchIn(viewModelScope)
 
         viewModelScope.launch {
@@ -82,6 +106,11 @@ class SucheViewModel @Inject constructor(
         suchen()
     }
 
+    fun fremdeEigenmarkenUmschalten() {
+        _zustand.value = _zustand.value.copy(fremdeEigenmarken = !_zustand.value.fremdeEigenmarken)
+        suchen()
+    }
+
     fun aktualisieren() = suchen()
 
     private fun suchen() {
@@ -103,6 +132,7 @@ class SucheViewModel @Inject constructor(
                 suchbegriff = aktuell.suchbegriff,
                 kategorieId = aktuell.gewaehlteKategorieId,
                 nurMitWerbepreis = aktuell.nurMitWerbepreis,
+                fremdeEigenmarken = aktuell.fremdeEigenmarken,
             )
 
             _zustand.value = when (ergebnis) {

@@ -21,6 +21,7 @@ import androidx.room.PrimaryKey
         Index(value = ["ean"], unique = true),
         Index(value = ["suchtext"]),
         Index(value = ["kategorie_id"]),
+        Index(value = ["eigenmarke_kette"]),
     ],
 )
 data class ArtikelEintrag(
@@ -32,6 +33,12 @@ data class ArtikelEintrag(
     val ean: String?,
     val artikelnummer: String?,
     @ColumnInfo(name = "kategorie_id") val kategorieId: Int?,
+    /**
+     * Die Kette, in der es diesen Artikel exklusiv gibt — `null` bei Herstellermarken, die
+     * überall stehen. Als Spalte und nicht erst beim Suchen berechnet, damit die Abfrage
+     * darüber filtern kann, ohne hundert Markennamen als Parameter mitzuschleppen.
+     */
+    @ColumnInfo(name = "eigenmarke_kette") val eigenmarkeKette: String? = null,
     @ColumnInfo(name = "bild_url") val bildUrl: String?,
     /** "Import" für Katalogartikel, "Nutzer" für selbst angelegte. */
     @ColumnInfo(name = "erstellt_von") val erstelltVon: String,

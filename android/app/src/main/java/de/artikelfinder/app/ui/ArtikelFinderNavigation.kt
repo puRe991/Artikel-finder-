@@ -12,6 +12,7 @@ import de.artikelfinder.app.ui.bearbeiten.BearbeitenBildschirm
 import de.artikelfinder.app.ui.detail.DetailBildschirm
 import de.artikelfinder.app.ui.gaenge.GaengeBildschirm
 import de.artikelfinder.app.ui.gaenge.GangArtikelBildschirm
+import de.artikelfinder.app.ui.markt.MaerkteBildschirm
 import de.artikelfinder.app.ui.navigation.Ziele
 import de.artikelfinder.app.ui.scan.ScanBildschirm
 import de.artikelfinder.app.ui.sicherung.SicherungBildschirm
@@ -30,6 +31,15 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
                 beiAngeboten = { navController.navigate(Ziele.ANGEBOTE) },
                 beiNeuemArtikel = { navController.navigate(Ziele.bearbeiten()) },
                 beiSicherung = { navController.navigate(Ziele.SICHERUNG) },
+                beiMaerkten = { navController.navigate(Ziele.MAERKTE) },
+            )
+        }
+
+        composable(Ziele.MAERKTE) {
+            MaerkteBildschirm(
+                ersteWahl = false,
+                beiFertig = navController::popBackStack,
+                beiZurueck = navController::popBackStack,
             )
         }
 

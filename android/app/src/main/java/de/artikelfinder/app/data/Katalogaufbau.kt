@@ -5,7 +5,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.KategorieEintrag
-import de.artikelfinder.app.data.local.MarktEintrag
+import de.artikelfinder.app.data.markt.Markenzuordnung
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +36,7 @@ sealed interface Aufbauzustand {
 class Katalogaufbau @Inject constructor(
     @ApplicationContext private val context: Context,
     private val datenbank: ArtikelDatenbank,
+    private val markenzuordnung: Markenzuordnung = Markenzuordnung(datenbank),
 ) {
     /** Woher die Katalogdatei kommt. Ueberschreibbar, damit Tests eigene Daten einspeisen. */
     var katalogQuelle: () -> InputStream = { context.assets.open(KATALOG_DATEI) }
@@ -47,12 +48,11 @@ class Katalogaufbau @Inject constructor(
         try {
             stammdatenAnlegen()
 
-            if (datenbank.artikelDao().anzahl() > 0) {
-                _zustand.value = Aufbauzustand.Fertig
-                return@withContext
-            }
+            if (datenbank.artikelDao().anzahl() == 0) katalogEinlesen()
 
-            katalogEinlesen()
+            // Nach dem Einlesen und nach jedem Update, das die Markenliste erweitert hat.
+            markenzuordnung.nachtragenWennNoetig()
+
             _zustand.value = Aufbauzustand.Fertig
         } catch (fehler: Exception) {
             _zustand.value = Aufbauzustand.Fehlgeschlagen(
@@ -61,14 +61,13 @@ class Katalogaufbau @Inject constructor(
         }
     }
 
+    /**
+     * Nur noch die Kategorien. Der Markt wird nicht mehr vorgegeben — beim ersten Start
+     * wählt der Nutzer ihn selbst, und „Kaufland Gießen" für jeden anzunehmen wäre schon
+     * damals eine Vermutung gewesen.
+     */
     private suspend fun stammdatenAnlegen() {
         val stammdaten = datenbank.stammdatenDao()
-
-        if (stammdaten.anzahlMaerkte() == 0) {
-            stammdaten.marktEinfuegen(
-                MarktEintrag(id = STANDARD_MARKT, name = "Kaufland Gießen", kette = "Kaufland", ort = "Gießen")
-            )
-        }
 
         if (stammdaten.anzahlKategorien() == 0) {
             for ((oberkategorie, unterkategorien) in KATEGORIERASTER) {
@@ -160,7 +159,6 @@ class Katalogaufbau @Inject constructor(
     }
 
     companion object {
-        const val STANDARD_MARKT = 1
         const val QUELLE_IMPORT = "Import"
         const val QUELLE_NUTZER = "Nutzer"
 
