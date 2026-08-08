@@ -41,10 +41,7 @@ class StartViewModel @Inject constructor(
     val zustand: StateFlow<Startzustand> = _zustand.asStateFlow()
 
     init {
-        starten()
-    }
-
-    fun starten() {
+        // Genau ein Sammler, auch wenn der Nutzer nach einem Fehler mehrmals wiederholt.
         viewModelScope.launch {
             aufbau.zustand.collect { fortschritt ->
                 _zustand.value = when (fortschritt) {
@@ -55,6 +52,10 @@ class StartViewModel @Inject constructor(
             }
         }
 
+        starten()
+    }
+
+    fun starten() {
         viewModelScope.launch { aufbau.sicherstellen() }
     }
 
