@@ -33,6 +33,18 @@ data class ArtikelEintrag(
     val artikelnummer: String?,
     @ColumnInfo(name = "kategorie_id") val kategorieId: Int?,
     @ColumnInfo(name = "bild_url") val bildUrl: String?,
+    /**
+     * Richtpreis aus Open Prices: Median der Preise, die Freiwillige zu dieser EAN in
+     * deutschen Läden erfasst haben. Kein Preis dieses Marktes — er steht hier, damit ein
+     * Artikel ohne eigene Erfassung nicht ganz ohne Preisangabe dasteht, und wird beim
+     * Katalogaufbau gesetzt, nie beim Einkaufen.
+     */
+    @ColumnInfo(name = "ref_preis") val refPreis: Double? = null,
+    @ColumnInfo(name = "ref_preis_min") val refPreisMin: Double? = null,
+    @ColumnInfo(name = "ref_preis_max") val refPreisMax: Double? = null,
+    @ColumnInfo(name = "ref_preis_anzahl") val refPreisAnzahl: Int? = null,
+    /** Datum der jüngsten Erfassung als ISO-Text (yyyy-MM-dd). */
+    @ColumnInfo(name = "ref_preis_stand") val refPreisStand: String? = null,
     /** "Import" für Katalogartikel, "Nutzer" für selbst angelegte. */
     @ColumnInfo(name = "erstellt_von") val erstelltVon: String,
     @ColumnInfo(name = "erstellt_am") val erstelltAm: Long,

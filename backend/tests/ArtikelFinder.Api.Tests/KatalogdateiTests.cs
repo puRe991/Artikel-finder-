@@ -142,6 +142,74 @@ public sealed class KatalogdateiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Rundlauf_ErhaeltDenRichtpreis()
+    {
+        var artikel = NeuerArtikel("Vollmilch 1 l", "4045317058067");
+        artikel.Referenzpreis = 1.19m;
+        artikel.ReferenzpreisNiedrigster = 1.09m;
+        artikel.ReferenzpreisHoechster = 1.29m;
+        artikel.ReferenzpreisAnzahl = 3;
+        artikel.ReferenzpreisStand = new DateOnly(2026, 6, 30);
+
+        _quellDb.Artikel.Add(artikel);
+        await _quellDb.SaveChangesAsync();
+        await Datei(_quellDb).SchreibenAsync(_pfad, CancellationToken.None);
+
+        await using var zielVerbindung = new SqliteConnection("Filename=:memory:");
+        await zielVerbindung.OpenAsync();
+        await using var zielDb = await DatenbankAsync(zielVerbindung);
+        await Datei(zielDb).LesenAsync(_pfad, Schreiber(zielDb), 500, CancellationToken.None);
+
+        var eingelesen = await zielDb.Artikel.SingleAsync();
+        Assert.Equal(1.19m, eingelesen.Referenzpreis);
+        Assert.Equal(1.09m, eingelesen.ReferenzpreisNiedrigster);
+        Assert.Equal(1.29m, eingelesen.ReferenzpreisHoechster);
+        Assert.Equal(3, eingelesen.ReferenzpreisAnzahl);
+        Assert.Equal(new DateOnly(2026, 6, 30), eingelesen.ReferenzpreisStand);
+    }
+
+    [Fact]
+    public async Task Lesen_KommtMitEinerKatalogdateiOhnePreisspaltenZurecht()
+    {
+        // Die Fassung vor dem Preisimport hatte fünf Spalten. Sie muss lesbar bleiben,
+        // sonst ist jeder ältere Katalog im Umlauf wertlos.
+        var pfad = _pfad.Replace(".gz", string.Empty);
+        await File.WriteAllTextAsync(
+            pfad,
+            "ean\tname\tmarke\tkategorie\tbildUrl\n"
+            + "4045317058067\tVollmilch 1 l\tK-Classic\tMilch\t\n");
+
+        var statistik = await Datei(_quellDb).LesenAsync(
+            pfad, Schreiber(_quellDb), 500, CancellationToken.None);
+
+        Assert.Equal(1, statistik.Neu);
+
+        var eingelesen = await _quellDb.Artikel.SingleAsync();
+        Assert.Equal("Vollmilch 1 l", eingelesen.Name);
+        Assert.Null(eingelesen.Referenzpreis);
+
+        File.Delete(pfad);
+    }
+
+    [Fact]
+    public async Task Lesen_UeberspringtEinenKaputtenRichtpreisStattDenArtikel()
+    {
+        var pfad = _pfad.Replace(".gz", string.Empty);
+        await File.WriteAllTextAsync(
+            pfad,
+            "ean\tname\tmarke\tkategorie\tbildUrl\tpreis\tpreisMin\tpreisMax\tpreisAnzahl\tpreisStand\n"
+            + "4045317058067\tVollmilch 1 l\tK-Classic\tMilch\t\tkaputt\t1.09\t1.29\t3\t2026-06-30\n");
+
+        await Datei(_quellDb).LesenAsync(pfad, Schreiber(_quellDb), 500, CancellationToken.None);
+
+        var eingelesen = await _quellDb.Artikel.SingleAsync();
+        Assert.Equal("Vollmilch 1 l", eingelesen.Name);
+        Assert.Null(eingelesen.Referenzpreis);
+
+        File.Delete(pfad);
+    }
+
+    [Fact]
     public async Task Lesen_LehntFremdeDateienAb()
     {
         await File.WriteAllTextAsync(_pfad.Replace(".gz", string.Empty), "irgendwas\tanderes\n");

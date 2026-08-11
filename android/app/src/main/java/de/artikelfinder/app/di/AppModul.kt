@@ -19,7 +19,8 @@ object AppModul {
     fun datenbank(@ApplicationContext context: Context): ArtikelDatenbank =
         Room.databaseBuilder(context, ArtikelDatenbank::class.java, "artikelfinder.db")
             // Die Datenbank enthält selbst erfasste Preise und Standorte — sie darf bei
-            // einem Schemawechsel nicht einfach verworfen werden. Beim nächsten
-            // Versionssprung gehört hier eine echte Migration hin.
+            // einem Schemawechsel nicht einfach verworfen werden. Jeder Versionssprung
+            // braucht deshalb eine echte Migration.
+            .addMigrations(ArtikelDatenbank.MIGRATION_1_2)
             .build()
 }

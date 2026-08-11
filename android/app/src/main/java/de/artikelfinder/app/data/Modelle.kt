@@ -14,8 +14,31 @@ data class Artikel(
     val kategorieName: String? = null,
     val bildUrl: String? = null,
     val preis: Preis? = null,
+    val richtpreis: Richtpreis? = null,
     val standort: Standort? = null,
 )
+
+/**
+ * Richtwert aus Open Prices — dem Preisverzeichnis der Open-Food-Facts-Familie, in das
+ * Freiwillige Regaletiketten und Kassenbons eintragen.
+ *
+ * Das ist ausdrücklich kein Preis dieses Marktes: er stammt aus deutschen Läden aller
+ * Ketten und ist Wochen bis Monate alt. Er steht deshalb neben dem selbst erfassten Preis,
+ * nie an dessen Stelle — und wird immer mit Spanne, Anzahl und Stand gezeigt, damit man
+ * sieht, wie belastbar er ist.
+ */
+data class Richtpreis(
+    val wert: Double,
+    val niedrigster: Double? = null,
+    val hoechster: Double? = null,
+    val anzahl: Int? = null,
+    /** Datum der jüngsten Erfassung als ISO-Text (yyyy-MM-dd). */
+    val stand: String? = null,
+) {
+    /** Eine Spanne zu zeigen lohnt nur, wenn die Erfassungen auseinandergehen. */
+    val hatSpanne: Boolean
+        get() = niedrigster != null && hoechster != null && hoechster > niedrigster
+}
 
 data class ArtikelDetail(
     val artikel: Artikel,

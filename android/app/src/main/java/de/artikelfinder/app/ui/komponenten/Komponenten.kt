@@ -98,11 +98,31 @@ private fun Preisanzeige(artikel: Artikel) {
     val preis = artikel.preis
 
     if (preis == null) {
-        Text(
-            text = "Kein Preis",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Ohne eigene Erfassung der Richtwert aus anderen Märkten — gedämpft und mit "ca.",
+        // damit er nicht mit einem Preis dieses Marktes zu verwechseln ist.
+        val richtpreis = artikel.richtpreis
+
+        if (richtpreis == null) {
+            Text(
+                text = "Kein Preis",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "ca. ${richtpreis.wert.alsPreis()}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Richtwert",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         return
     }
 

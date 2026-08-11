@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using ArtikelFinder.Api.Data;
 using ArtikelFinder.Import;
 using ArtikelFinder.Import.OpenFoodFacts;
+using ArtikelFinder.Import.OpenPrices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -62,6 +63,35 @@ var markenBefehl = new Command(
     markeOption, markenLandOption, markenMaxOption, markenSeitengroesseOption, markenPauseOption,
 };
 
+// --- Befehl: preise ---
+var preisLandOption = new Option<string>(
+    "--land",
+    () => "Deutschland",
+    "Ländername in OpenStreetMap-Schreibweise. Leer = alle Länder.");
+
+var preisKetteOption = new Option<string?>(
+    "--kette",
+    "Nur Läden dieser Kette, z.B. Kaufland. Ohne Angabe zählen alle Ketten.");
+
+var hoechstalterOption = new Option<int>(
+    "--hoechstalter",
+    () => 730,
+    "Erfassungen dürfen höchstens so viele Tage alt sein. 0 = keine Grenze.");
+
+var preisSeitengroesseOption = new Option<int>("--seitengroesse", () => 100, "Preise pro Anfrage (max. 100).");
+var preisPauseOption = new Option<int>("--pause", () => 250, "Pause zwischen Anfragen in Millisekunden.");
+var ohneNeueArtikelOption = new Option<bool>(
+    "--ohne-neue-artikel",
+    "Nur vorhandene Artikel bepreisen, statt fehlende aus den Preisdaten anzulegen.");
+
+var preisBefehl = new Command(
+    "preise",
+    "Holt Richtpreise aus Open Prices und schreibt sie an die Artikel.")
+{
+    preisLandOption, preisKetteOption, hoechstalterOption, preisSeitengroesseOption,
+    preisPauseOption, ohneNeueArtikelOption,
+};
+
 // --- Befehl: csv ---
 var dateiOption = new Option<string>("--datei", "Pfad zum TSV-Export (auch .gz).") { IsRequired = true };
 var csvLandOption = new Option<string>("--land", () => "germany", "Nur Produkte mit diesem Land. Leer = alle.");
@@ -94,7 +124,7 @@ var seedBefehl = new Command("seed", "Liest eine mit 'export' erzeugte Katalogda
 
 var wurzel = new RootCommand("Befüllt den Artikel-Finder-Katalog aus der Open-Food-Facts-Familie.")
 {
-    apiBefehl, markenBefehl, csvBefehl, exportBefehl, seedBefehl,
+    apiBefehl, markenBefehl, preisBefehl, csvBefehl, exportBefehl, seedBefehl,
 };
 
 wurzel.AddGlobalOption(datenbankOption);
@@ -167,6 +197,35 @@ markenBefehl.SetHandler(async kontext =>
         marken.Count, einstellungen.Datenbanken.Count);
 
     var statistik = await importer.MarkenImportierenAsync(einstellungen, ct);
+    protokoll.LogInformation("Fertig. {Statistik}", statistik);
+});
+
+preisBefehl.SetHandler(async kontext =>
+{
+    var dienste = DiensteBauen(
+        kontext.ParseResult.GetValueForOption(datenbankOption)!,
+        kontext.ParseResult.GetValueForOption(userAgentOption)!,
+        kontext.ParseResult.GetValueForOption(ausfuehrlichOption));
+
+    await using var _ = dienste;
+    var ct = kontext.GetCancellationToken();
+    await DatenbankVorbereitenAsync(dienste, ct);
+
+    var einstellungen = new PreisImportEinstellungen
+    {
+        Land = kontext.ParseResult.GetValueForOption(preisLandOption)!,
+        Kette = kontext.ParseResult.GetValueForOption(preisKetteOption),
+        HoechstalterTage = Math.Max(0, kontext.ParseResult.GetValueForOption(hoechstalterOption)),
+        NeueArtikel = !kontext.ParseResult.GetValueForOption(ohneNeueArtikelOption),
+        Seitengroesse = Math.Clamp(kontext.ParseResult.GetValueForOption(preisSeitengroesseOption), 1, 100),
+        Pause = TimeSpan.FromMilliseconds(Math.Max(0, kontext.ParseResult.GetValueForOption(preisPauseOption))),
+    };
+
+    var importer = dienste.GetRequiredService<Preisimporter>();
+    var protokoll = dienste.GetRequiredService<ILoggerFactory>().CreateLogger("Preise");
+
+    protokoll.LogInformation("Starte Preisimport aus Open Prices für {Land}.", einstellungen.Land);
+    var statistik = await importer.AusfuehrenAsync(einstellungen, ct);
     protokoll.LogInformation("Fertig. {Statistik}", statistik);
 });
 
@@ -267,10 +326,20 @@ static ServiceProvider DiensteBauen(string verbindung, string userAgent, bool au
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     });
 
+    // Open Prices ist ein eigener Dienst mit eigener Adresse, aber denselben Regeln:
+    // erkennbarer User-Agent, Wartezeit zwischen den Anfragen.
+    dienste.AddHttpClient<IOpenPricesClient, OpenPricesClient>(http =>
+    {
+        http.Timeout = TimeSpan.FromSeconds(60);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+    });
+
     dienste.AddScoped<Katalogschreiber>();
     dienste.AddScoped<Katalogdatei>();
     dienste.AddScoped<ApiImporter>();
     dienste.AddScoped<CsvImporter>();
+    dienste.AddScoped<Preisimporter>();
 
     return dienste.BuildServiceProvider();
 }

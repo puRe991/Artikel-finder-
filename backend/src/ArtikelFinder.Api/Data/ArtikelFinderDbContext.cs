@@ -48,6 +48,10 @@ public class ArtikelFinderDbContext(DbContextOptions<ArtikelFinderDbContext> opt
             b.Property(a => a.BildUrl).HasMaxLength(1000);
             b.Property(a => a.ErstelltVon).HasConversion<string>().HasMaxLength(20);
 
+            b.Property(a => a.Referenzpreis).HasColumnType("decimal(10,2)");
+            b.Property(a => a.ReferenzpreisNiedrigster).HasColumnType("decimal(10,2)");
+            b.Property(a => a.ReferenzpreisHoechster).HasColumnType("decimal(10,2)");
+
             // Gefilterter Unique-Index: EAN ist optional, aber wenn vorhanden eindeutig.
             // Sowohl SQLite als auch PostgreSQL unterstuetzen partielle Indizes.
             b.HasIndex(a => a.Ean)

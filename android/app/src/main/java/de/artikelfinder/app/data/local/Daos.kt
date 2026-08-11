@@ -158,6 +158,37 @@ interface ArtikelDao {
     suspend fun stapelEinfuegen(artikel: List<ArtikelEintrag>)
 
     /**
+     * Trägt den Richtpreis an einem bereits vorhandenen Artikel nach. Absichtlich nur diese
+     * fünf Spalten: Name, Marke und Kategorie können vom Nutzer korrigiert worden sein.
+     */
+    @Query(
+        """
+        UPDATE artikel
+        SET ref_preis = :preis,
+            ref_preis_min = :min,
+            ref_preis_max = :max,
+            ref_preis_anzahl = :anzahl,
+            ref_preis_stand = :stand
+        WHERE ean = :ean
+        """
+    )
+    suspend fun richtpreisSetzen(
+        ean: String,
+        preis: Double?,
+        min: Double?,
+        max: Double?,
+        anzahl: Int?,
+        stand: String?,
+    )
+
+    @Transaction
+    suspend fun richtpreiseSetzen(zeilen: List<Richtpreiszeile>) {
+        for (zeile in zeilen) {
+            richtpreisSetzen(zeile.ean, zeile.preis, zeile.min, zeile.max, zeile.anzahl, zeile.stand)
+        }
+    }
+
+    /**
      * Laufende Angebote, das am schnellsten ablaufende zuerst. Angebote ohne Enddatum
      * stehen hinten — sie laufen bis auf Weiteres.
      */
@@ -174,6 +205,16 @@ interface ArtikelDao {
 }
 
 data class GangZeile(val gang: String, val anzahl: Int)
+
+/** Ein nachzutragender Richtpreis, wie er in der Katalogdatei steht. */
+data class Richtpreiszeile(
+    val ean: String,
+    val preis: Double?,
+    val min: Double?,
+    val max: Double?,
+    val anzahl: Int?,
+    val stand: String?,
+)
 
 @Dao
 interface PreisDao {

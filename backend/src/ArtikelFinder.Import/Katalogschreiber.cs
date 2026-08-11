@@ -6,8 +6,17 @@ using Microsoft.Extensions.Logging;
 
 namespace ArtikelFinder.Import;
 
-/// <summary>Ein Artikel, so wie ihn eine Importquelle liefert.</summary>
-public sealed record Rohartikel(string Name, string? Marke, string Ean, string? BildUrl, string? ZielKategorie);
+/// <summary>
+/// Ein Artikel, so wie ihn eine Importquelle liefert. Den Richtpreis liefern nur die
+/// Quellen, die einen haben — Open Food Facts kennt keine Preise.
+/// </summary>
+public sealed record Rohartikel(
+    string Name,
+    string? Marke,
+    string Ean,
+    string? BildUrl,
+    string? ZielKategorie,
+    Referenzpreis? Referenzpreis = null);
 
 /// <summary>
 /// Schreibt importierte Artikel in den Katalog.
@@ -56,7 +65,7 @@ public sealed class Katalogschreiber(ArtikelFinderDbContext db, ILogger<Katalogs
 
             if (!vorhandene.TryGetValue(roh.Ean, out var bestehend))
             {
-                db.Artikel.Add(new Artikel
+                var neu = new Artikel
                 {
                     Id = Guid.NewGuid(),
                     Name = Kuerzen(roh.Name, 300)!,
@@ -66,7 +75,11 @@ public sealed class Katalogschreiber(ArtikelFinderDbContext db, ILogger<Katalogs
                     BildUrl = Kuerzen(roh.BildUrl, 1000),
                     ErstelltVon = Erstellerquelle.Import,
                     ErstelltAm = jetzt,
-                });
+                };
+
+                roh.Referenzpreis?.AnwendenAuf(neu);
+
+                db.Artikel.Add(neu);
 
                 statistik.Neu++;
                 continue;
@@ -97,6 +110,15 @@ public sealed class Katalogschreiber(ArtikelFinderDbContext db, ILogger<Katalogs
             if (bestehend.KategorieId is null && kategorieId is not null)
             {
                 bestehend.KategorieId = kategorieId;
+                geaendert = true;
+            }
+
+            // Auch der Richtpreis fuellt hier nur eine Luecke. Aktualisiert wird er vom
+            // Preisimporter, der ihn frisch aus der Quelle hat — beim Einlesen einer
+            // Katalogdatei waere der aeltere Wert nicht unbedingt der schlechtere.
+            if (bestehend.Referenzpreis is null && roh.Referenzpreis is { } nachgereicht)
+            {
+                nachgereicht.AnwendenAuf(bestehend);
                 geaendert = true;
             }
 

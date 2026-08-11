@@ -447,7 +447,18 @@ private fun ArtikelMitStand.zuModell(): Artikel {
         preis = preisWert?.let {
             Preis(preis = it, werbepreis = werbepreis, werbepreisAktiv = aktiv, werbepreisGueltigBis = werbepreisBis)
         },
+        richtpreis = artikel.richtpreis(),
         standort = gang?.let { Standort(gang = it, regalBeschreibung = regalBeschreibung) },
+    )
+}
+
+private fun ArtikelEintrag.richtpreis(): Richtpreis? = refPreis?.let {
+    Richtpreis(
+        wert = it,
+        niedrigster = refPreisMin,
+        hoechster = refPreisMax,
+        anzahl = refPreisAnzahl,
+        stand = refPreisStand,
     )
 }
 

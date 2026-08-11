@@ -40,7 +40,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import de.artikelfinder.app.data.ArtikelDetail
+import de.artikelfinder.app.data.Richtpreis
 import de.artikelfinder.app.ui.alsDatumZeit
+import de.artikelfinder.app.ui.alsIsoDatum
 import de.artikelfinder.app.ui.alsPreis
 import de.artikelfinder.app.ui.komponenten.AbschnittsTitel
 import de.artikelfinder.app.ui.komponenten.Aktionsmarke
@@ -225,6 +227,8 @@ private fun Inhalt(
             }
         }
 
+        artikel.richtpreis?.let { Richtpreiskarte(it) }
+
         Button(onClick = beiPreisErfassen, modifier = Modifier.fillMaxWidth()) {
             Text(if (preis == null) "Preis erfassen" else "Neuen Preis erfassen")
         }
@@ -271,6 +275,53 @@ private fun Inhalt(
                 }
             }
         }
+    }
+}
+
+/**
+ * Der Richtwert aus Open Prices, deutlich abgesetzt vom eigenen Preis: gedämpfte Farbe,
+ * "ca." davor und die Herkunft darunter. Wer im Markt steht, muss auf einen Blick sehen,
+ * welche Zahl vom Regal stammt und welche aus fremden Filialen.
+ */
+@Composable
+private fun Richtpreiskarte(richtpreis: Richtpreis) {
+    InfoKarte {
+        Text(
+            text = "Richtwert anderer Märkte",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "ca. ${richtpreis.wert.alsPreis()}",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        val angaben = buildList {
+            richtpreis.anzahl?.let {
+                add(if (it == 1) "eine Erfassung" else "Median aus $it Erfassungen")
+            }
+            if (richtpreis.hatSpanne) {
+                add("${richtpreis.niedrigster!!.alsPreis()} – ${richtpreis.hoechster!!.alsPreis()}")
+            }
+            richtpreis.stand?.alsIsoDatum()?.let { add("Stand $it") }
+        }
+
+        if (angaben.isNotEmpty()) {
+            Text(
+                text = angaben.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Text(
+            text = "Aus Open Prices — von Freiwilligen in deutschen Läden erfasst, nicht in "
+                + "diesem Markt.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 

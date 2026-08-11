@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using ArtikelFinder.Api.Data;
@@ -14,12 +15,22 @@ namespace ArtikelFinder.Import;
 /// gepacktes TSV ist klein genug fürs Repository, überlebt Schemaänderungen (es enthält
 /// nur fachliche Felder, keine Ids) und lässt sich ohne Werkzeug ansehen.
 ///
-/// Bewusst nicht enthalten: Preise und Standorte. Die sind markt- und personenbezogen und
-/// gehören nicht in eine allgemeine Katalogdatei.
+/// Enthalten ist der Richtpreis aus Open Prices: er gehört zum Artikel, nicht zu einem
+/// Markt, und ist für jeden Nutzer derselbe. Selbst erfasste Preise und Standorte sind
+/// dagegen markt- und personenbezogen und stehen bewusst nicht in der Katalogdatei.
+///
+/// Die Preisspalten sind angehängt statt eingeschoben: eine ältere Katalogdatei ohne sie
+/// lässt sich weiterhin einlesen.
 /// </summary>
 public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei> log)
 {
-    private const string Kopfzeile = "ean\tname\tmarke\tkategorie\tbildUrl";
+    private const string Kopfzeile =
+        "ean\tname\tmarke\tkategorie\tbildUrl\tpreis\tpreisMin\tpreisMax\tpreisAnzahl\tpreisStand";
+
+    /// <summary>Spaltenzahl der Fassung ohne Preise.</summary>
+    private const int SpaltenOhnePreis = 5;
+
+    private const int SpaltenMitPreis = 10;
 
     public async Task<int> SchreibenAsync(string pfad, CancellationToken ct)
     {
@@ -59,7 +70,12 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
                 Saeubern(eintrag.Name),
                 Saeubern(eintrag.Marke),
                 Saeubern(eintrag.Kategorie?.Name),
-                Saeubern(eintrag.BildUrl)));
+                Saeubern(eintrag.BildUrl),
+                AlsText(eintrag.Referenzpreis),
+                AlsText(eintrag.ReferenzpreisNiedrigster),
+                AlsText(eintrag.ReferenzpreisHoechster),
+                eintrag.ReferenzpreisAnzahl?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                eintrag.ReferenzpreisStand?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty));
 
             geschrieben++;
         }
@@ -107,7 +123,7 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
             }
 
             var felder = zeile.Split('\t');
-            if (felder.Length < 5)
+            if (felder.Length < SpaltenOhnePreis)
             {
                 gesamt.Uebersprungen++;
                 continue;
@@ -128,7 +144,8 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
                 continue;
             }
 
-            stapel.Add(new Rohartikel(name, Wert(felder[2]), ean, Wert(felder[4]), Wert(felder[3])));
+            stapel.Add(new Rohartikel(
+                name, Wert(felder[2]), ean, Wert(felder[4]), Wert(felder[3]), ReferenzpreisLesen(felder)));
 
             if (stapel.Count >= stapelgroesse)
             {
@@ -144,6 +161,38 @@ public sealed class Katalogdatei(ArtikelFinderDbContext db, ILogger<Katalogdatei
 
         return gesamt;
     }
+
+    /// <summary>
+    /// Liest die Preisspalten, falls die Datei sie hat. Eine unvollständige oder kaputte
+    /// Angabe kostet nur den Richtpreis, nicht den Artikel — der Katalog ist auch ohne ihn
+    /// brauchbar.
+    /// </summary>
+    private static Referenzpreis? ReferenzpreisLesen(string[] felder)
+    {
+        if (felder.Length < SpaltenMitPreis)
+        {
+            return null;
+        }
+
+        if (AlsBetrag(felder[5]) is not { } wert
+            || AlsBetrag(felder[6]) is not { } niedrigster
+            || AlsBetrag(felder[7]) is not { } hoechster
+            || !int.TryParse(felder[8], CultureInfo.InvariantCulture, out var anzahl)
+            || !DateOnly.TryParseExact(felder[9].Trim(), "yyyy-MM-dd", out var stand))
+        {
+            return null;
+        }
+
+        return new Referenzpreis(wert, niedrigster, hoechster, anzahl, stand);
+    }
+
+    private static string AlsText(decimal? wert) =>
+        wert?.ToString("0.00", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static decimal? AlsBetrag(string feld) =>
+        decimal.TryParse(feld.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var wert)
+            ? wert
+            : null;
 
     private static Stream Packen(string pfad, Stream datei) =>
         pfad.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)
