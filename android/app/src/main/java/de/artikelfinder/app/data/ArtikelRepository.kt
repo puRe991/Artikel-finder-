@@ -5,11 +5,21 @@ import de.artikelfinder.app.data.Katalogaufbau.Companion.STANDARD_MARKT
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.ArtikelMitStand
+import de.artikelfinder.app.data.local.MarktEintrag
+import de.artikelfinder.app.data.local.MerkpostenEintrag
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
@@ -36,26 +46,37 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     private val standortDao get() = datenbank.standortDao()
     private val verlaufDao get() = datenbank.verlaufDao()
     private val stammdatenDao get() = datenbank.stammdatenDao()
+    private val merkpostenDao get() = datenbank.merkpostenDao()
 
-    /** Laufende Angebote, das am schnellsten ablaufende zuerst. */
-    fun aktiveAngebote(): Flow<List<Artikel>> =
-        artikelDao.aktiveAngebote(STANDARD_MARKT, System.currentTimeMillis())
+    /**
+     * Der Markt, für den Preise, Angebote und Gänge gelten. Die Wahl steht in den Merkposten
+     * und überlebt damit den Neustart; gelesen wird sie beim ersten Zugriff.
+     */
+    private val gewaehlterMarkt = MutableStateFlow(STANDARD_MARKT)
+    private val marktSperre = Mutex()
+    private var marktGelesen = false
+
+    /** Laufende Angebote des gewählten Marktes, das am schnellsten ablaufende zuerst. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun aktiveAngebote(): Flow<List<Artikel>> = marktIdFluss().flatMapLatest { marktId ->
+        artikelDao.aktiveAngebote(marktId, System.currentTimeMillis())
             .map { liste -> liste.map { it.zuModell() } }
+    }
 
     /**
      * Der zuletzt eingetippte Aktionszeitraum. Beim Abtippen eines Prospekts gilt derselbe
      * Zeitraum fuer jedes Angebot; ihn 40-mal einzugeben waere die eigentliche Arbeit.
      */
     suspend fun letztesAktionsende(): Long? =
-        datenbank.merkpostenDao().lesen(MERKPOSTEN_AKTIONSENDE)?.toLongOrNull()
+        merkpostenDao.lesen(MERKPOSTEN_AKTIONSENDE)?.toLongOrNull()
 
     suspend fun aktionsendeMerken(zeitpunkt: Long) =
-        datenbank.merkpostenDao().schreiben(
-            de.artikelfinder.app.data.local.MerkpostenEintrag(MERKPOSTEN_AKTIONSENDE, zeitpunkt.toString())
-        )
+        merkpostenDao.schreiben(MerkpostenEintrag(MERKPOSTEN_AKTIONSENDE, zeitpunkt.toString()))
 
-    fun zuletztBearbeitet(): Flow<List<Artikel>> =
-        artikelDao.zuletztBearbeitet(STANDARD_MARKT).map { liste -> liste.map { it.zuModell() } }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun zuletztBearbeitet(): Flow<List<Artikel>> = marktIdFluss().flatMapLatest { marktId ->
+        artikelDao.zuletztBearbeitet(marktId).map { liste -> liste.map { it.zuModell() } }
+    }
 
     suspend fun suchen(
         suchbegriff: String?,
@@ -81,7 +102,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             nurMitStandort = 0,
             nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
             jetzt = System.currentTimeMillis(),
-            marktId = STANDARD_MARKT,
+            marktId = aktiveMarktId(),
             grenze = seitengroesse,
             versatz = (seite - 1) * seitengroesse,
         )
@@ -106,12 +127,12 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             nurMitStandort = 0,
             nurMitWerbepreis = if (nurMitWerbepreis) 1 else 0,
             jetzt = System.currentTimeMillis(),
-            marktId = STANDARD_MARKT,
+            marktId = aktiveMarktId(),
         )
     }
 
     suspend fun holen(id: String): Abruf<ArtikelDetail> {
-        val artikel = artikelDao.holen(id, STANDARD_MARKT)
+        val artikel = artikelDao.holen(id, aktiveMarktId())
             ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
 
         return Abruf.Erfolg(
@@ -127,7 +148,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     /** Barcode-Lookup. `null` heißt "unbekannt" — die App bietet dann das Anlegen an. */
     suspend fun perEan(ean: String): Abruf<ArtikelDetail?> {
         val normalisiert = Ean.normalisieren(ean) ?: return Abruf.Erfolg(null)
-        val treffer = artikelDao.perEan(normalisiert, STANDARD_MARKT) ?: return Abruf.Erfolg(null)
+        val treffer = artikelDao.perEan(normalisiert, aktiveMarktId()) ?: return Abruf.Erfolg(null)
         return holen(treffer.artikel.id) as Abruf<ArtikelDetail?>
     }
 
@@ -293,7 +314,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     }
 
     suspend fun gaenge(): Abruf<List<Gang>> {
-        val zeilen = artikelDao.gaenge(STANDARD_MARKT)
+        val zeilen = artikelDao.gaenge(aktiveMarktId())
 
         return Abruf.Erfolg(
             zeilen
@@ -304,13 +325,71 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     }
 
     suspend fun artikelImGang(gang: String): Abruf<List<Artikel>> =
-        Abruf.Erfolg(artikelDao.imGang(gang, STANDARD_MARKT).map { it.zuModell() })
+        Abruf.Erfolg(artikelDao.imGang(gang, aktiveMarktId()).map { it.zuModell() })
 
+    /** Der gewählte Markt. */
     suspend fun markt(): Abruf<Markt> {
-        val markt = stammdatenDao.maerkte().firstOrNull()
+        val markt = stammdatenDao.markt(aktiveMarktId())
+            ?: stammdatenDao.maerkte().firstOrNull()
             ?: return Abruf.Fehler("Es ist kein Markt angelegt.")
 
-        return Abruf.Erfolg(Markt(markt.id, markt.name, markt.ort))
+        return Abruf.Erfolg(markt.zuModell())
+    }
+
+    /**
+     * Alle Märkte, nach Kategorie gruppiert — die Vorlage der Marktauswahl. Bekannte
+     * Kategorien stehen in der Reihenfolge des [Marktkatalog]s, alles Weitere dahinter.
+     */
+    suspend fun maerkte(): Abruf<List<Marktgruppe>> {
+        val nachKategorie = stammdatenDao.maerkte().map { it.zuModell() }.groupBy { it.kategorie }
+
+        val reihenfolge = Marktkatalog.REIHENFOLGE.filter { it in nachKategorie } +
+            nachKategorie.keys.filterNot { it in Marktkatalog.REIHENFOLGE }.sorted()
+
+        return Abruf.Erfolg(reihenfolge.map { Marktgruppe(it, nachKategorie.getValue(it)) })
+    }
+
+    /**
+     * Wechselt den Markt. Preise, Angebote und Gänge gelten ab sofort für ihn — erfasst wird
+     * je Markt getrennt, ein Preis aus dem Baumarkt taucht im Supermarkt also nicht auf.
+     */
+    suspend fun marktWaehlen(marktId: Int): Abruf<Markt> {
+        val markt = stammdatenDao.markt(marktId)
+            ?: return Abruf.Fehler("Der Markt wurde nicht gefunden.")
+
+        merkpostenDao.schreiben(MerkpostenEintrag(MERKPOSTEN_MARKT, marktId.toString()))
+
+        marktSperre.withLock {
+            marktGelesen = true
+            gewaehlterMarkt.value = marktId
+        }
+
+        return Abruf.Erfolg(markt.zuModell())
+    }
+
+    /** Die Id des gewählten Marktes; beim ersten Aufruf aus den Merkposten gelesen. */
+    suspend fun aktiveMarktId(): Int {
+        marktSperre.withLock {
+            if (!marktGelesen) {
+                val gemerkt = merkpostenDao.lesen(MERKPOSTEN_MARKT)?.toIntOrNull()
+
+                // Ein gemerkter, aber nicht mehr vorhandener Markt fällt auf den Standard
+                // zurück — sonst zeigte die App dauerhaft eine leere Auswahl.
+                gewaehlterMarkt.value = gemerkt?.takeIf { stammdatenDao.markt(it) != null }
+                    ?: STANDARD_MARKT
+                marktGelesen = true
+            }
+        }
+
+        return gewaehlterMarkt.value
+    }
+
+    /** Der gewählte Markt als Fluss — Bildschirme laden neu, sobald er wechselt. */
+    fun marktFluss(): Flow<Markt> = marktIdFluss().mapNotNull { stammdatenDao.markt(it)?.zuModell() }
+
+    private fun marktIdFluss(): Flow<Int> = flow {
+        aktiveMarktId()
+        emitAll(gewaehlterMarkt)
     }
 
     private suspend fun preisErfassenIntern(
@@ -321,12 +400,13 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         erfasstVon: String?,
         jetzt: Long,
     ): PreisEintrag {
-        val vorheriger = preisDao.aktuellster(artikelId, STANDARD_MARKT)
+        val marktId = aktiveMarktId()
+        val vorheriger = preisDao.aktuellster(artikelId, marktId)
 
         val eintrag = PreisEintrag(
             id = UUID.randomUUID().toString(),
             artikelId = artikelId,
-            marktId = STANDARD_MARKT,
+            marktId = marktId,
             wert = preis,
             werbepreis = werbepreis,
             werbepreisVon = null,
@@ -360,7 +440,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         val eintrag = StandortEintrag(
             id = UUID.randomUUID().toString(),
             artikelId = artikelId,
-            marktId = STANDARD_MARKT,
+            marktId = aktiveMarktId(),
             gang = gang.trim(),
             regalBeschreibung = regalBeschreibung.leerAlsNull(),
             kartenX = null,
@@ -424,6 +504,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
 
     private companion object {
         const val MERKPOSTEN_AKTIONSENDE = "aktionsende"
+        const val MERKPOSTEN_MARKT = "markt"
     }
 }
 
@@ -468,6 +549,14 @@ private fun PreisEintrag.zuModell(): Preis {
         erfasstVon = erfasstVon,
     )
 }
+
+private fun MarktEintrag.zuModell() = Markt(
+    id = id,
+    name = name,
+    kette = kette,
+    kategorie = Marktkatalog.kategorieFuer(kette),
+    ort = ort,
+)
 
 private fun StandortEintrag.zuModell() = Standort(
     id = id,

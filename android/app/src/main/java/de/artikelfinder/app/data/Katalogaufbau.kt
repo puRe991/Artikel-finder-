@@ -6,6 +6,7 @@ import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.KategorieEintrag
 import de.artikelfinder.app.data.local.MarktEintrag
+import de.artikelfinder.app.data.local.StammdatenDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStream
+import java.util.Locale
 import java.util.UUID
 import java.util.zip.GZIPInputStream
 import javax.inject.Inject
@@ -70,6 +72,8 @@ class Katalogaufbau @Inject constructor(
             )
         }
 
+        kettenNachtragen(stammdaten)
+
         if (stammdaten.anzahlKategorien() == 0) {
             for ((oberkategorie, unterkategorien) in KATEGORIERASTER) {
                 val elternId = stammdaten.kategorieEinfuegen(
@@ -80,6 +84,28 @@ class Katalogaufbau @Inject constructor(
                     stammdaten.kategorieEinfuegen(KategorieEintrag(name = name, parentId = elternId))
                 }
             }
+        }
+    }
+
+    /**
+     * Legt die bekannten Ketten aus dem [Marktkatalog] an, damit sie in der Marktauswahl
+     * stehen. Läuft bei jedem Start: so erscheinen nachgetragene Ketten auch in einer
+     * bestehenden Installation, ohne die Datenbank anzufassen.
+     *
+     * Je Kette höchstens ein Markt — ein selbst benannter Markt derselben Kette (etwa
+     * "Kaufland Gießen") zählt bereits und wird nicht durch einen zweiten Eintrag verdoppelt.
+     */
+    private suspend fun kettenNachtragen(stammdaten: StammdatenDao) {
+        val vorhandeneKetten = stammdaten.maerkte()
+            .map { it.kette.trim().lowercase(Locale.GERMANY) }
+            .toSet()
+
+        val fehlende = Marktkatalog.VORGESCHLAGENE_KETTEN
+            .filter { it.name.trim().lowercase(Locale.GERMANY) !in vorhandeneKetten }
+            .map { MarktEintrag(name = it.name, kette = it.name, ort = null) }
+
+        if (fehlende.isNotEmpty()) {
+            stammdaten.maerkteEinfuegen(fehlende)
         }
     }
 

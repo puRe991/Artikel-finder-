@@ -10,6 +10,12 @@ darunter 4.261 Kaufland-Eigenmarkenartikel (K-Classic, K-Bio, Purland, Bevola �
 der App und wird beim ersten Start in die geräteeigene Datenbank geschrieben. Preise und
 Standorte trägst du beim Einkaufen selbst ein; sie bleiben auf dem Gerät.
 
+**Der Markt ist wählbar.** Über das Ladensymbol in der Kopfzeile stehen neben dem eigenen
+Supermarkt die bekannten Baumärkte (OBI, Bauhaus, Hornbach, toom, hagebaumarkt …) und
+Elektrofachmärkte (MediaMarkt, Saturn, expert, expert Klein, Euronics, Alternate,
+Cyberport …) zur Auswahl. Preise und Gänge werden je Markt erfasst — der Akkuschrauber aus
+dem Baumarkt taucht im Supermarkt nicht auf.
+
 Eine Internetverbindung wird nur für die Produktbilder verwendet. Suche, Barcode-Scan,
 Preis- und Standorterfassung funktionieren vollständig offline.
 
@@ -20,8 +26,8 @@ android/                              Die App — Kotlin, Jetpack Compose, Room
   app/src/main/assets/                Der ausgelieferte Artikelkatalog
   app/src/main/java/de/artikelfinder/app/
     data/                             Room-Datenbank, Repository, Katalogaufbau
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote
-  app/src/test/                       31 Tests gegen echtes SQLite (Robolectric)
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | markt
+  app/src/test/                       44 Tests gegen echtes SQLite (Robolectric)
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
@@ -41,7 +47,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew test                 # 31 Tests
+./gradlew test                 # 44 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -121,7 +127,16 @@ falschen Gang.
 
 **Preise und Standorte hängen am Markt, nicht am Artikel allein.** `marktId` steckt von
 Anfang an in beiden Tabellen. Der Ausbau auf weitere Filialen kostet damit keine
-Datenmigration.
+Datenmigration — die Marktauswahl setzt genau darauf auf: sie merkt sich den gewählten Markt
+und alle Abfragen laufen gegen ihn.
+
+**Die Kategorie eines Marktes steht im Code, nicht in der Datenbank.** Dass OBI ein Baumarkt
+und Saturn ein Elektrofachmarkt ist, ist feststehendes Wissen über den Handel und kein
+erfasster Wert. `Marktkatalog` ordnet die Kette zu; die Tabelle `markt` bleibt dadurch
+unverändert (keine Migration), und ein Update, das eine Kette nachträgt, ordnet auch bereits
+angelegte Märkte richtig ein. Die bekannten Ketten werden bei jedem Start nachgetragen —
+höchstens eine je Kette, damit ein selbst benannter Markt wie „Kaufland Gießen" nicht durch
+einen zweiten Kaufland-Eintrag verdoppelt wird.
 
 **Erfassungen werden angehängt, nie überschrieben.** Der jüngste Eintrag pro
 (Artikel, Markt) ist der aktuelle. Die Preishistorie und der „steht jetzt in Gang 3
@@ -149,7 +164,7 @@ vollständig auf dem Gerät.
 ## Tests
 
 ```bash
-cd android && ./gradlew test       # 31 Tests
+cd android && ./gradlew test       # 44 Tests
 cd backend && dotnet test          # 79 Tests
 ```
 

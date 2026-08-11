@@ -26,6 +26,8 @@ data class SucheZustand(
     val kategorien: List<Kategorie> = emptyList(),
     val gewaehlteKategorieId: Int? = null,
     val nurMitWerbepreis: Boolean = false,
+    /** Der Markt, dessen Preise die Liste zeigt. */
+    val marktName: String? = null,
     val laedt: Boolean = false,
     val fehler: String? = null,
 ) {
@@ -56,6 +58,15 @@ class SucheViewModel @Inject constructor(
 
         repository.zuletztBearbeitet()
             .onEach { liste -> _zustand.value = _zustand.value.copy(zuletztBearbeitet = liste) }
+            .launchIn(viewModelScope)
+
+        // Nach einem Marktwechsel gelten andere Preise — die Trefferliste muss neu geladen
+        // werden, sonst zeigt sie die Zahlen des vorigen Marktes weiter.
+        repository.marktFluss()
+            .onEach { markt ->
+                _zustand.value = _zustand.value.copy(marktName = markt.name)
+                suchen()
+            }
             .launchIn(viewModelScope)
 
         viewModelScope.launch {

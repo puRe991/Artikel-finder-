@@ -57,7 +57,17 @@ data class Kategorie(
 data class Markt(
     val id: Int,
     val name: String,
+    /** Handelskette, z.B. "Kaufland" oder "OBI". */
+    val kette: String,
+    /** Abschnitt der Marktauswahl, siehe [Marktkatalog]. */
+    val kategorie: String,
     val ort: String? = null,
+)
+
+/** Ein Abschnitt der Marktauswahl: eine Kategorie und die Märkte, die zu ihr gehören. */
+data class Marktgruppe(
+    val kategorie: String,
+    val maerkte: List<Markt>,
 )
 
 data class Gang(

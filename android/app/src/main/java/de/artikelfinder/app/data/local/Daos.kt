@@ -230,14 +230,20 @@ interface StammdatenDao {
     @Insert
     suspend fun kategorieEinfuegen(kategorie: KategorieEintrag): Long
 
-    @Query("SELECT * FROM markt ORDER BY name")
+    @Query("SELECT * FROM markt ORDER BY name COLLATE NOCASE")
     suspend fun maerkte(): List<MarktEintrag>
+
+    @Query("SELECT * FROM markt WHERE id = :id")
+    suspend fun markt(id: Int): MarktEintrag?
 
     @Query("SELECT COUNT(*) FROM markt")
     suspend fun anzahlMaerkte(): Int
 
     @Insert
     suspend fun marktEinfuegen(markt: MarktEintrag): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun maerkteEinfuegen(maerkte: List<MarktEintrag>)
 
     @Transaction
     suspend fun kategorienAnlegen(eintraege: List<KategorieEintrag>): List<Long> =

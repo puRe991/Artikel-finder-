@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -33,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +49,7 @@ fun SucheBildschirm(
     beiScan: () -> Unit,
     beiGaengen: () -> Unit,
     beiAngeboten: () -> Unit,
+    beiMarktwahl: () -> Unit,
     beiNeuemArtikel: () -> Unit,
     viewModel: SucheViewModel = hiltViewModel(),
 ) {
@@ -55,8 +58,27 @@ fun SucheBildschirm(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Artikel-Finder") },
+                title = {
+                    Column {
+                        Text("Artikel-Finder")
+
+                        // Welcher Markt gilt, entscheidet über jeden Preis auf dem Bildschirm
+                        // — er gehört deshalb in die Kopfzeile und nicht in ein Untermenü.
+                        zustand.marktName?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                },
                 actions = {
+                    IconButton(onClick = beiMarktwahl) {
+                        Icon(Icons.Default.Storefront, contentDescription = "Markt wählen")
+                    }
                     IconButton(onClick = beiAngeboten) {
                         Icon(Icons.Default.LocalOffer, contentDescription = "Angebote")
                     }
