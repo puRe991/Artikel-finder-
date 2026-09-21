@@ -147,6 +147,8 @@ fun DetailBildschirm(
     if (preisDialogOffen) {
         PreisDialog(
             vorbelegtesAktionsende = zustand.vorbelegtesAktionsende,
+            vorbelegterPreis = zustand.detail?.preise?.firstOrNull()?.preis
+                ?: zustand.detail?.bedarf?.letzterStueckpreis,
             beiAbbrechen = { preisDialogOffen = false },
             beiSpeichern = { preis, werbepreis, bis, von ->
                 preisDialogOffen = false
@@ -239,13 +241,9 @@ private fun Inhalt(
 
         AbschnittsTitel("Preis")
         val preis = detail.preise.firstOrNull()
-        if (preis == null) {
-            Text(
-                text = "Für diesen Artikel ist noch kein Preis erfasst.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
+        // Aus Käufen bekannter Preis, falls noch kein Ladenpreis erfasst ist.
+        val effektiverPreis = detail.bedarf.letzterStueckpreis
+        if (preis != null) {
             InfoKarte {
                 if (preis.werbepreisAktiv && preis.werbepreis != null) {
                     Row(
@@ -293,10 +291,30 @@ private fun Inhalt(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+        } else if (effektiverPreis != null) {
+            InfoKarte {
+                Text(
+                    text = effektiverPreis.alsPreis(),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Text(
+                    text = "Aus deinen Einkäufen übernommen — noch kein Ladenpreis erfasst. "
+                        + "Mit Preis ändern wird er zum festen Artikelpreis.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        } else {
+            Text(
+                text = "Für diesen Artikel ist noch kein Preis erfasst.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         Button(onClick = beiPreisErfassen, modifier = Modifier.fillMaxWidth()) {
-            Text(if (preis == null) "Preis erfassen" else "Neuen Preis erfassen")
+            Text(if (preis != null || effektiverPreis != null) "Preis ändern" else "Preis erfassen")
         }
 
         AbschnittsTitel("Standort")

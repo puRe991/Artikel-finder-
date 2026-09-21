@@ -27,10 +27,14 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun PreisDialog(
     vorbelegtesAktionsende: Long? = null,
+    vorbelegterPreis: Double? = null,
     beiAbbrechen: () -> Unit,
     beiSpeichern: (preis: Double, werbepreis: Double?, gueltigBis: Long?, erfasstVon: String?) -> Unit,
 ) {
-    var preisText by remember { mutableStateOf("") }
+    // Bestehenden Preis vorbelegen, damit „ändern" heißt: den Wert sehen und anpassen.
+    var preisText by remember {
+        mutableStateOf(vorbelegterPreis?.let { String.format(java.util.Locale.GERMANY, "%.2f", it) } ?: "")
+    }
     var werbepreisText by remember { mutableStateOf("") }
     // Vorbelegt mit dem zuletzt genutzten Aktionsende: bei einem Prospekt mit 40 Angeboten
     // spart das 40-mal dieselbe Datumseingabe.
@@ -56,7 +60,7 @@ fun PreisDialog(
 
     AlertDialog(
         onDismissRequest = beiAbbrechen,
-        title = { Text("Preis erfassen") },
+        title = { Text(if (vorbelegterPreis != null) "Preis ändern" else "Preis erfassen") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
