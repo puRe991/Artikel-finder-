@@ -77,6 +77,18 @@ class DetailViewModel @Inject constructor(
         speichern { repository.standortErfassen(artikelId, gang, regalBeschreibung, erfasstVon) }
     }
 
+    fun einkaufErfassen(menge: Int, stueckpreis: Double?) {
+        speichern { repository.einkaufErfassen(artikelId, menge, stueckpreis) }
+    }
+
+    fun verbrauchErfassen(menge: Int = 1) {
+        speichern { repository.verbrauchErfassen(artikelId, menge) }
+    }
+
+    fun bestandKorrigieren(neueMenge: Int) {
+        speichern { repository.bestandKorrigieren(artikelId, neueMenge) }
+    }
+
     fun meldungGelesen() {
         _zustand.value = _zustand.value.copy(meldung = null)
     }

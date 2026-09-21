@@ -101,6 +101,34 @@ data class StandortEintrag(
     @ColumnInfo(name = "erfasst_von") val erfasstVon: String?,
 )
 
+/**
+ * Bestandsbewegung des eigenen Vorrats zu Hause: ein Kauf erhöht den Bestand, ein Verbrauch
+ * senkt ihn, eine Korrektur stellt ihn richtig. Wie bei Preisen und Standorten wird
+ * angehängt statt überschrieben — der aktuelle Bestand ist die Summe aller Bewegungen, und
+ * aus den Kaufzeitpunkten leitet sich der Bedarf ab.
+ */
+@Entity(
+    tableName = "bestandsbewegung",
+    foreignKeys = [ForeignKey(
+        entity = ArtikelEintrag::class,
+        parentColumns = ["id"],
+        childColumns = ["artikel_id"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index(value = ["artikel_id", "erfasst_am"])],
+)
+data class BestandsbewegungEintrag(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "artikel_id") val artikelId: String,
+    /** "KAUF", "VERBRAUCH" oder "KORREKTUR", siehe `Bewegungsart`. */
+    val art: String,
+    /** Vorzeichenbehaftet: Kauf positiv, Verbrauch negativ, Korrektur je nach Richtung. */
+    val menge: Int,
+    val stueckpreis: Double?,
+    @ColumnInfo(name = "erfasst_am") val erfasstAm: Long,
+    @ColumnInfo(name = "erfasst_von") val erfasstVon: String?,
+)
+
 @Entity(
     tableName = "verlauf",
     foreignKeys = [ForeignKey(

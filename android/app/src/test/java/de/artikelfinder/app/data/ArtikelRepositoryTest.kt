@@ -276,6 +276,102 @@ class ArtikelRepositoryTest {
     }
 
     @Test
+    fun `Einkauf erhoeht den Bestand und Verbrauch senkt ihn`() = runTest {
+        val artikel = repository.anlegen(name = "Vollmilch").erfolg()
+        val id = artikel.artikel.id
+
+        assertEquals(0, repository.bedarf(id).erfolg().aktuellerBestand)
+
+        repository.einkaufErfassen(id, menge = 3, stueckpreis = 1.29)
+        assertEquals(3, repository.bedarf(id).erfolg().aktuellerBestand)
+
+        repository.verbrauchErfassen(id, menge = 1)
+        assertEquals(2, repository.bedarf(id).erfolg().aktuellerBestand)
+    }
+
+    @Test
+    fun `Verbrauch faellt nicht unter null`() = runTest {
+        val artikel = repository.anlegen(name = "Butter").erfolg()
+        val id = artikel.artikel.id
+
+        repository.einkaufErfassen(id, menge = 1)
+        repository.verbrauchErfassen(id, menge = 5)
+
+        assertEquals(0, repository.bedarf(id).erfolg().aktuellerBestand)
+    }
+
+    @Test
+    fun `Bestand laesst sich auf einen genauen Wert korrigieren`() = runTest {
+        val artikel = repository.anlegen(name = "Mehl").erfolg()
+        val id = artikel.artikel.id
+
+        repository.einkaufErfassen(id, menge = 2)
+        repository.bestandKorrigieren(id, neueMenge = 5)
+
+        assertEquals(5, repository.bedarf(id).erfolg().aktuellerBestand)
+    }
+
+    @Test
+    fun `Einkauf per EAN bucht bekannte Artikel ein und meldet unbekannte`() = runTest {
+        repository.anlegen(name = "Vollmilch", ean = FREIE_EAN)
+
+        val bekannt = repository.einkaufPerEan(FREIE_EAN).erfolg()
+        assertNotNull(bekannt)
+        assertEquals(1, bekannt!!.neuerBestand)
+
+        val unbekannt = repository.einkaufPerEan("4000000000000").erfolg()
+        assertNull(unbekannt)
+    }
+
+    @Test
+    fun `Einkauf ohne Preis nutzt den erfassten Ladenpreis fuer die Kosten`() = runTest {
+        val artikel = repository.anlegen(name = "Joghurt", preis = 0.99).erfolg()
+        val id = artikel.artikel.id
+
+        repository.einkaufErfassen(id) // ohne Stückpreis -> Ladenpreis 0,99
+
+        val bedarf = repository.bedarf(id).erfolg()
+        assertEquals(1, bedarf.anzahlKaeufe)
+        assertEquals(0.99, bedarf.gesamtAusgaben, 0.0001)
+    }
+
+    @Test
+    fun `Bedarf steckt in der Detailansicht`() = runTest {
+        val artikel = repository.anlegen(name = "Kaffee").erfolg()
+        val id = artikel.artikel.id
+        repository.einkaufErfassen(id, menge = 2, stueckpreis = 4.99)
+
+        val detail = repository.holen(id).erfolg()
+
+        assertEquals(2, detail.bedarf.aktuellerBestand)
+        assertEquals(1, detail.bedarf.anzahlKaeufe)
+    }
+
+    @Test
+    fun `Bestandsuebersicht listet nur erfasste Artikel`() = runTest {
+        val mitBestand = repository.anlegen(name = "Nudeln").erfolg()
+        repository.anlegen(name = "Ungenutzt")
+        repository.einkaufErfassen(mitBestand.artikel.id, menge = 4)
+
+        val uebersicht = repository.bestandsUebersicht().first()
+
+        assertEquals(1, uebersicht.size)
+        assertEquals("Nudeln", uebersicht.first().artikel.name)
+        assertEquals(4, uebersicht.first().menge)
+    }
+
+    @Test
+    fun `Bestandsbewegungen stehen im Verlauf`() = runTest {
+        val artikel = repository.anlegen(name = "Reis").erfolg()
+        val id = artikel.artikel.id
+
+        repository.einkaufErfassen(id, menge = 2)
+
+        val verlauf = repository.verlauf(id).erfolg()
+        assertTrue(verlauf.any { it.entitaet == "Bestand" })
+    }
+
+    @Test
     fun `Zweiter Start liest den Katalog nicht erneut ein`() = runTest {
         val vorher = datenbank.artikelDao().anzahl()
         katalogaufbau().sicherstellen()

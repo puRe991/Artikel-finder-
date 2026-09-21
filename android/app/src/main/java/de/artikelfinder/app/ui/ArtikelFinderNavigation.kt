@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import de.artikelfinder.app.ui.angebote.AngeboteBildschirm
 import de.artikelfinder.app.ui.bearbeiten.BearbeitenBildschirm
+import de.artikelfinder.app.ui.bestand.BestandBildschirm
 import de.artikelfinder.app.ui.detail.DetailBildschirm
 import de.artikelfinder.app.ui.gaenge.GaengeBildschirm
 import de.artikelfinder.app.ui.gaenge.GangArtikelBildschirm
@@ -24,14 +25,23 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
         composable(Ziele.SUCHE) {
             SucheBildschirm(
                 beiArtikel = { navController.navigate(Ziele.detail(it)) },
-                beiScan = { navController.navigate(Ziele.SCAN) },
+                beiScan = { navController.navigate(Ziele.scan()) },
                 beiGaengen = { navController.navigate(Ziele.GAENGE) },
                 beiAngeboten = { navController.navigate(Ziele.ANGEBOTE) },
+                beiBestand = { navController.navigate(Ziele.BESTAND) },
                 beiNeuemArtikel = { navController.navigate(Ziele.bearbeiten()) },
             )
         }
 
-        composable(Ziele.SCAN) {
+        composable(
+            route = Ziele.SCAN,
+            arguments = listOf(
+                navArgument(Ziele.ARG_ZWECK) {
+                    type = NavType.StringType
+                    defaultValue = Ziele.ZWECK_SUCHE
+                },
+            ),
+        ) {
             ScanBildschirm(
                 // Der Scan-Bildschirm selbst gehört nicht in den Zurück-Stapel: nach dem
                 // Treffer soll „Zurück“ zur Suche führen, nicht wieder in die Kamera.
@@ -45,6 +55,14 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
                         popUpTo(Ziele.SCAN) { inclusive = true }
                     }
                 },
+                beiZurueck = navController::popBackStack,
+            )
+        }
+
+        composable(Ziele.BESTAND) {
+            BestandBildschirm(
+                beiArtikel = { navController.navigate(Ziele.detail(it)) },
+                beiScannen = { navController.navigate(Ziele.scan(Ziele.ZWECK_BESTAND)) },
                 beiZurueck = navController::popBackStack,
             )
         }

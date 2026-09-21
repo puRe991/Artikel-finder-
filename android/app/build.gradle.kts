@@ -14,8 +14,8 @@ android {
         applicationId = "de.artikelfinder.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -70,6 +70,12 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+// Room schreibt sein Schema als JSON hierhin. Es dient als Vorlage für Migrationen und wird
+// mit eingecheckt, damit Schemaänderungen im Diff sichtbar sind.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {

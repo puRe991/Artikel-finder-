@@ -11,8 +11,13 @@ import com.google.mlkit.vision.common.InputImage
  * Wertet Kamerabilder lokal auf dem Gerät aus (ML Kit, kein Netzverkehr).
  *
  * Ein Treffer wird nur gemeldet, wenn derselbe Code zweimal hintereinander erkannt wurde.
- * Einzelbild-Fehlerkennungen sind bei schrägen oder verknitterten Etiketten häufig, und
- * ein falscher Barcode führt hier direkt zum falschen Artikel.
+ * Einzelbild-Fehlerkennungen sind bei schrägen oder verknitterten Etiketten häufig, und ein
+ * falscher Barcode führt hier direkt zum falschen Artikel.
+ *
+ * Nach einem Treffer wird derselbe Code gesperrt, bis er aus dem Bild verschwindet oder ein
+ * anderer erscheint. So zählt ein Etikett, das noch vor der Kamera liegt, nicht doppelt —
+ * und beim Abarbeiten des Einkaufs kann Artikel für Artikel gescannt werden, ohne dass der
+ * Scanner neu gestartet werden muss.
  */
 class BarcodeAnalyse(
     private val scanner: BarcodeScanner,
@@ -20,12 +25,12 @@ class BarcodeAnalyse(
 ) : ImageAnalysis.Analyzer {
 
     private var letzterKandidat: String? = null
-    private var bestaetigt = false
+    private var gesperrterCode: String? = null
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(bild: ImageProxy) {
         val medienBild = bild.image
-        if (medienBild == null || bestaetigt) {
+        if (medienBild == null) {
             bild.close()
             return
         }
@@ -37,9 +42,17 @@ class BarcodeAnalyse(
                 val wert = barcodes.firstNotNullOfOrNull { it.gueltigerRohwert() }
 
                 when {
-                    wert == null -> letzterKandidat = null
+                    // Kein Code im Bild: Sperre lösen, damit derselbe Artikel danach erneut
+                    // (bewusst) gezählt werden kann.
+                    wert == null -> {
+                        letzterKandidat = null
+                        gesperrterCode = null
+                    }
+                    // Der eben gemeldete Code liegt noch vor der Kamera — nicht doppelt zählen.
+                    wert == gesperrterCode -> Unit
+                    // Zweite Erkennung in Folge bestätigt den Treffer.
                     wert == letzterKandidat -> {
-                        bestaetigt = true
+                        gesperrterCode = wert
                         beiTreffer(wert)
                     }
                     else -> letzterKandidat = wert

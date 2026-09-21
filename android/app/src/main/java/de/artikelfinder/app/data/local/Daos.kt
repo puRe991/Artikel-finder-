@@ -154,6 +154,9 @@ interface ArtikelDao {
     @Query("SELECT * FROM artikel WHERE id = :id")
     suspend fun roh(id: String): ArtikelEintrag?
 
+    @Query("SELECT * FROM artikel WHERE id IN (:ids)")
+    suspend fun rohMehrere(ids: List<String>): List<ArtikelEintrag>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun stapelEinfuegen(artikel: List<ArtikelEintrag>)
 
@@ -217,6 +220,40 @@ interface MerkpostenDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun schreiben(eintrag: MerkpostenEintrag)
+}
+
+@Dao
+interface BestandDao {
+    @Insert
+    suspend fun einfuegen(bewegung: BestandsbewegungEintrag)
+
+    /** Der aktuelle Bestand eines Artikels ist die Summe aller seiner Bewegungen. */
+    @Query("SELECT COALESCE(SUM(menge), 0) FROM bestandsbewegung WHERE artikel_id = :artikelId")
+    suspend fun bestand(artikelId: String): Int
+
+    @Query("SELECT * FROM bestandsbewegung WHERE artikel_id = :artikelId ORDER BY erfasst_am ASC, id ASC")
+    suspend fun bewegungen(artikelId: String): List<BestandsbewegungEintrag>
+
+    /**
+     * Zuletzt tatsächlich gezahlter Kaufpreis — die Vorbelegung beim nächsten Einkauf, bevor
+     * auf den Ladenpreis zurückgegriffen wird.
+     */
+    @Query(
+        """
+        SELECT stueckpreis FROM bestandsbewegung
+        WHERE artikel_id = :artikelId AND art = 'KAUF' AND stueckpreis IS NOT NULL
+        ORDER BY erfasst_am DESC LIMIT 1
+        """
+    )
+    suspend fun letzterKaufpreis(artikelId: String): Double?
+
+    /**
+     * Alle Bewegungen als Fluss — der Vorrat wird daraus je Artikel gruppiert und der Bedarf
+     * berechnet. Ein Heimvorrat umfasst Dutzende Artikel, nicht Tausende; das trägt der
+     * Übersicht.
+     */
+    @Query("SELECT * FROM bestandsbewegung ORDER BY erfasst_am ASC, id ASC")
+    fun alleBewegungen(): Flow<List<BestandsbewegungEintrag>>
 }
 
 @Dao

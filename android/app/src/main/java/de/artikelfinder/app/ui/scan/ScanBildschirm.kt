@@ -12,11 +12,13 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -48,6 +51,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import de.artikelfinder.app.ui.komponenten.FehlerAnzeige
+import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,8 +82,8 @@ fun ScanBildschirm(
         }
     }
 
-    // Der Scan-Bildschirm ist nur Zwischenstation: nach dem Treffer sofort weiter, und den
-    // Zustand zurücksetzen, damit der nächste Aufruf wieder scanbereit ist.
+    // In der Suche ist der Scan nur Zwischenstation: nach dem Treffer sofort weiter. Im
+    // Bestand-Modus bleibt der Scanner offen, nur unbekannte Codes führen zum Anlegen.
     LaunchedEffect(zustand.ergebnis) {
         when (val ergebnis = zustand.ergebnis) {
             is ScanErgebnis.Gefunden -> {
@@ -94,10 +98,18 @@ fun ScanBildschirm(
         }
     }
 
+    // Die Einbuch-Bestätigung kurz zeigen, dann ausblenden — der Zähler bleibt.
+    LaunchedEffect(zustand.letzteMeldung) {
+        if (zustand.letzteMeldung != null) {
+            delay(2500)
+            viewModel.meldungGelesen()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Barcode scannen") },
+                title = { Text(if (zustand.zumBestand) "Einkauf scannen" else "Barcode scannen") },
                 navigationIcon = {
                     IconButton(onClick = beiZurueck) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
@@ -120,7 +132,11 @@ fun ScanBildschirm(
 
                 else -> {
                     Kameravorschau(beiBarcode = viewModel::barcodeErkannt)
-                    Hinweisleiste(zustand, modifier = Modifier.align(Alignment.BottomCenter))
+                    Hinweisleiste(
+                        zustand = zustand,
+                        beiFertig = beiZurueck,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
             }
         }
@@ -196,9 +212,13 @@ private fun Kameravorschau(beiBarcode: (String) -> Unit) {
 }
 
 @Composable
-private fun Hinweisleiste(zustand: ScanZustand, modifier: Modifier = Modifier) {
+private fun Hinweisleiste(
+    zustand: ScanZustand,
+    beiFertig: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Surface(
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
@@ -206,18 +226,54 @@ private fun Hinweisleiste(zustand: ScanZustand, modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (zustand.prueft) {
-                CircularProgressIndicator()
-                Text(
-                    text = "Suche ${zustand.gescannteEan} …",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            } else {
-                Text(
-                    text = "Barcode in den Bildausschnitt halten",
+            val meldung = zustand.letzteMeldung
+            when {
+                zustand.prueft -> {
+                    CircularProgressIndicator()
+                    Text(
+                        text = "Suche ${zustand.gescannteEan} …",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+
+                meldung != null -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                        )
+                        Text(
+                            text = "${meldung.name} · Bestand ${meldung.neuerBestand}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+
+                else -> Text(
+                    text = if (zustand.zumBestand) {
+                        "Gekaufte Artikel nacheinander vor die Kamera halten"
+                    } else {
+                        "Barcode in den Bildausschnitt halten"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                 )
+            }
+
+            if (zustand.zumBestand) {
+                Text(
+                    text = "In dieser Sitzung erfasst: ${zustand.erfassteMenge}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = beiFertig, modifier = Modifier.fillMaxWidth()) {
+                    Text("Fertig")
+                }
             }
         }
     }

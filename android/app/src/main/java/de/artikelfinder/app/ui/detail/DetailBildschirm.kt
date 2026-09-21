@@ -7,14 +7,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +44,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import de.artikelfinder.app.data.ArtikelDetail
+import de.artikelfinder.app.data.Bedarf
+import de.artikelfinder.app.ui.alsAnzahl
+import de.artikelfinder.app.ui.alsDatum
 import de.artikelfinder.app.ui.alsDatumZeit
 import de.artikelfinder.app.ui.alsPreis
 import de.artikelfinder.app.ui.komponenten.AbschnittsTitel
@@ -48,6 +55,7 @@ import de.artikelfinder.app.ui.komponenten.FehlerAnzeige
 import de.artikelfinder.app.ui.komponenten.InfoKarte
 import de.artikelfinder.app.ui.komponenten.LadeAnzeige
 import de.artikelfinder.app.ui.werbezeitraumText
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +70,8 @@ fun DetailBildschirm(
 
     var preisDialogOffen by remember { mutableStateOf(false) }
     var standortDialogOffen by remember { mutableStateOf(false) }
+    var einkaufDialogOffen by remember { mutableStateOf(false) }
+    var korrekturDialogOffen by remember { mutableStateOf(false) }
 
     LaunchedEffect(zustand.meldung) {
         zustand.meldung?.let {
@@ -104,6 +114,10 @@ fun DetailBildschirm(
                     detail = zustand.detail!!,
                     beiPreisErfassen = { preisDialogOffen = true },
                     beiStandortErfassen = { standortDialogOffen = true },
+                    beiGekauft = { viewModel.einkaufErfassen(1, null) },
+                    beiVerbraucht = { viewModel.verbrauchErfassen(1) },
+                    beiEinkaufErfassen = { einkaufDialogOffen = true },
+                    beiKorrektur = { korrekturDialogOffen = true },
                 )
             }
         }
@@ -129,6 +143,29 @@ fun DetailBildschirm(
             },
         )
     }
+
+    if (einkaufDialogOffen) {
+        EinkaufDialog(
+            vorbelegterStueckpreis = zustand.detail?.bedarf?.letzterStueckpreis
+                ?: zustand.detail?.preise?.firstOrNull()?.gueltigerPreis,
+            beiAbbrechen = { einkaufDialogOffen = false },
+            beiSpeichern = { menge, preis ->
+                einkaufDialogOffen = false
+                viewModel.einkaufErfassen(menge, preis)
+            },
+        )
+    }
+
+    if (korrekturDialogOffen) {
+        BestandKorrekturDialog(
+            aktuellerBestand = zustand.detail?.bedarf?.aktuellerBestand ?: 0,
+            beiAbbrechen = { korrekturDialogOffen = false },
+            beiSpeichern = { menge ->
+                korrekturDialogOffen = false
+                viewModel.bestandKorrigieren(menge)
+            },
+        )
+    }
 }
 
 @Composable
@@ -136,6 +173,10 @@ private fun Inhalt(
     detail: ArtikelDetail,
     beiPreisErfassen: () -> Unit,
     beiStandortErfassen: () -> Unit,
+    beiGekauft: () -> Unit,
+    beiVerbraucht: () -> Unit,
+    beiEinkaufErfassen: () -> Unit,
+    beiKorrektur: () -> Unit,
 ) {
     val artikel = detail.artikel
 
@@ -166,6 +207,14 @@ private fun Inhalt(
             Zeile("Kategorie", artikel.kategorieName ?: "—")
             Zeile("Quelle", if (detail.erstelltVon == "Import") "Open Food Facts" else "Selbst erfasst")
         }
+
+        BestandAbschnitt(
+            bedarf = detail.bedarf,
+            beiGekauft = beiGekauft,
+            beiVerbraucht = beiVerbraucht,
+            beiEinkaufErfassen = beiEinkaufErfassen,
+            beiKorrektur = beiKorrektur,
+        )
 
         AbschnittsTitel("Preis")
         val preis = detail.preise.firstOrNull()
@@ -270,6 +319,96 @@ private fun Inhalt(
                     Text(text = frueher.preis.alsPreis(), style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BestandAbschnitt(
+    bedarf: Bedarf,
+    beiGekauft: () -> Unit,
+    beiVerbraucht: () -> Unit,
+    beiEinkaufErfassen: () -> Unit,
+    beiKorrektur: () -> Unit,
+) {
+    AbschnittsTitel("Bestand & Bedarf")
+
+    InfoKarte {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(
+                    text = "Zu Hause",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "${bedarf.aktuellerBestand} Stück",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalIconButton(
+                    onClick = beiVerbraucht,
+                    enabled = bedarf.aktuellerBestand > 0,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Verbraucht")
+                }
+                FilledTonalIconButton(onClick = beiGekauft, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.Add, contentDescription = "Gekauft")
+                }
+            }
+        }
+
+        if (bedarf.nachkaufEmpfohlen) {
+            Text(
+                text = "Bald leer — Zeit zum Nachkaufen.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+
+        if (bedarf.hatBedarfsschaetzung) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            bedarf.bedarfProWoche?.let { Zeile("Bedarf je Woche", "≈ ${it.alsAnzahl()} Stück") }
+            bedarf.bedarfProMonat?.let { Zeile("Bedarf je Monat", "≈ ${it.alsAnzahl()} Stück") }
+            bedarf.reichweiteTage?.let { Zeile("Reicht noch", "~${it.roundToInt()} Tage") }
+            bedarf.monatskosten?.let { Zeile("Kosten je Monat", "≈ ${it.alsPreis()}") }
+        } else {
+            Text(
+                text = "Sobald du diesen Artikel ein zweites Mal kaufst und einscannst, "
+                    + "schätzt die App aus deinem Rhythmus, wie viel du brauchst und was es kostet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+
+        if (bedarf.anzahlKaeufe > 0) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Zeile("Käufe erfasst", bedarf.anzahlKaeufe.toString())
+            Zeile("Bisher gekauft", "${bedarf.gekaufteMenge} Stück")
+            if (bedarf.gesamtAusgaben > 0) Zeile("Bisher ausgegeben", bedarf.gesamtAusgaben.alsPreis())
+            bedarf.letzterKauf?.let { Zeile("Letzter Kauf", it.alsDatum()) }
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedButton(onClick = beiEinkaufErfassen, modifier = Modifier.weight(1f)) {
+            Text("Gekauft erfassen")
+        }
+        OutlinedButton(onClick = beiKorrektur, modifier = Modifier.weight(1f)) {
+            Text("Korrigieren")
         }
     }
 }

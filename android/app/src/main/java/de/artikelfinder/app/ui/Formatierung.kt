@@ -10,6 +10,11 @@ private val Deutsch = Locale.GERMANY
 
 private val Waehrung: NumberFormat = NumberFormat.getCurrencyInstance(Deutsch)
 
+private val Anzahl: NumberFormat = NumberFormat.getNumberInstance(Deutsch).apply {
+    maximumFractionDigits = 1
+    minimumFractionDigits = 0
+}
+
 private val DatumFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("dd.MM.yyyy", Deutsch).withZone(ZoneId.systemDefault())
 
@@ -17,6 +22,9 @@ private val DatumZeitFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm", Deutsch).withZone(ZoneId.systemDefault())
 
 fun Double.alsPreis(): String = Waehrung.format(this)
+
+/** Gerundete Stückzahl in deutscher Schreibweise, etwa „8,3". */
+fun Double.alsAnzahl(): String = Anzahl.format(this)
 
 fun Long.alsDatum(): String = DatumFormat.format(Instant.ofEpochMilli(this))
 

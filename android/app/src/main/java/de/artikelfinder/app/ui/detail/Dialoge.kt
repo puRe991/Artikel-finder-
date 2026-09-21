@@ -154,6 +154,98 @@ fun StandortDialog(
     )
 }
 
+/**
+ * Einen gekauften Artikel in den Vorrat buchen. Menge und Stückpreis sind vorbelegt: eine
+ * Packung zum zuletzt bekannten Preis ist der Normalfall, alles andere lässt sich anpassen.
+ */
+@Composable
+fun EinkaufDialog(
+    vorbelegterStueckpreis: Double? = null,
+    beiAbbrechen: () -> Unit,
+    beiSpeichern: (menge: Int, stueckpreis: Double?) -> Unit,
+) {
+    var mengeText by remember { mutableStateOf("1") }
+    var preisText by remember {
+        mutableStateOf(vorbelegterStueckpreis?.let { String.format(java.util.Locale.GERMANY, "%.2f", it) } ?: "")
+    }
+
+    val menge = mengeText.trim().toIntOrNull()
+    val preis = preisText.alsBetrag()
+
+    val fehler = when {
+        menge == null || menge <= 0 -> "Bitte eine Menge von mindestens 1 angeben."
+        preisText.isNotBlank() && preis == null -> "Stückpreis konnte nicht gelesen werden."
+        else -> null
+    }
+
+    AlertDialog(
+        onDismissRequest = beiAbbrechen,
+        title = { Text("Gekauft erfassen") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = mengeText,
+                    onValueChange = { mengeText = it.filter(Char::isDigit) },
+                    label = { Text("Menge") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = preisText,
+                    onValueChange = { preisText = it },
+                    label = { Text("Stückpreis in € (optional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                fehler?.let { Text(text = it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = fehler == null,
+                onClick = { beiSpeichern(menge!!, preis) },
+            ) { Text("Speichern") }
+        },
+        dismissButton = { TextButton(onClick = beiAbbrechen) { Text("Abbrechen") } },
+    )
+}
+
+/** Den Bestand von Hand auf einen genauen Wert setzen — etwa nach dem Nachzählen im Schrank. */
+@Composable
+fun BestandKorrekturDialog(
+    aktuellerBestand: Int,
+    beiAbbrechen: () -> Unit,
+    beiSpeichern: (neueMenge: Int) -> Unit,
+) {
+    var mengeText by remember { mutableStateOf(aktuellerBestand.toString()) }
+    val menge = mengeText.trim().toIntOrNull()
+    val fehler = if (menge == null || menge < 0) "Bitte eine Zahl ab 0 angeben." else null
+
+    AlertDialog(
+        onDismissRequest = beiAbbrechen,
+        title = { Text("Bestand korrigieren") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = mengeText,
+                    onValueChange = { mengeText = it.filter(Char::isDigit) },
+                    label = { Text("Neuer Bestand") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                fehler?.let { Text(text = it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = fehler == null, onClick = { beiSpeichern(menge!!) }) { Text("Speichern") }
+        },
+        dismissButton = { TextButton(onClick = beiAbbrechen) { Text("Abbrechen") } },
+    )
+}
+
 /** Millisekunden zurueck in die Eingabeform TT.MM.JJJJ. */
 fun alsTagesDatum(zeitpunkt: Long): String =
     java.time.Instant.ofEpochMilli(zeitpunkt)

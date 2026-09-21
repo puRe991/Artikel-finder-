@@ -12,9 +12,10 @@ import androidx.room.RoomDatabase
         StandortEintrag::class,
         VerlaufEintrag::class,
         MerkpostenEintrag::class,
+        BestandsbewegungEintrag::class,
     ],
-    version = 1,
-    exportSchema = false,
+    version = 2,
+    exportSchema = true,
 )
 abstract class ArtikelDatenbank : RoomDatabase() {
     abstract fun artikelDao(): ArtikelDao
@@ -23,4 +24,5 @@ abstract class ArtikelDatenbank : RoomDatabase() {
     abstract fun verlaufDao(): VerlaufDao
     abstract fun stammdatenDao(): StammdatenDao
     abstract fun merkpostenDao(): MerkpostenDao
+    abstract fun bestandDao(): BestandDao
 }
