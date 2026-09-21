@@ -47,7 +47,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew test                 # 47 Tests
+./gradlew test                 # 50 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -179,7 +179,7 @@ erzeugte SQL wortgleich — weicht es ab, verweigert Room beim Start den Dienst.
 ## Tests
 
 ```bash
-cd android && ./gradlew test       # 47 Tests
+cd android && ./gradlew test       # 50 Tests
 cd backend && dotnet test          # 79 Tests
 ```
 

@@ -18,6 +18,9 @@ class BedarfsrechnerTest {
     private fun kauf(tagNr: Long, menge: Int = 1, preis: Double? = null) =
         Bewegung(Bewegungsart.KAUF, menge, preis, tagNr * tag)
 
+    private fun kaufBei(zeitpunkt: Long, menge: Int = 1, preis: Double? = null) =
+        Bewegung(Bewegungsart.KAUF, menge, preis, zeitpunkt)
+
     @Test
     fun `ohne Bewegungen ist alles leer`() {
         val bedarf = Bedarfsrechner.berechnen(emptyList(), jetzt)
@@ -105,6 +108,58 @@ class BedarfsrechnerTest {
         assertEquals(5, bedarf.aktuellerBestand)
         assertNull(bedarf.verbrauchProTag)
         assertNull(bedarf.monatskosten)
+    }
+
+    @Test
+    fun `zwei Scans desselben Einkaufs ergeben keine Bedarfsschaetzung`() {
+        // Der reale Fehlerfall: dieselbe Packung zweimal kurz hintereinander gescannt.
+        val start = 50L * tag
+        val bewegungen = listOf(
+            kaufBei(start, menge = 1, preis = 1.19),
+            kaufBei(start + 11 * 60 * 1000, menge = 1, preis = 1.19), // 11 Minuten später
+        )
+        val bedarf = Bedarfsrechner.berechnen(bewegungen, jetzt)
+
+        assertEquals(2, bedarf.aktuellerBestand)
+        assertEquals(2, bedarf.anzahlKaeufe)      // zwei Scans
+        assertEquals(1, bedarf.anzahlNachkaeufe)  // aber ein Einkauf
+        assertNull(bedarf.verbrauchProTag)
+        assertNull(bedarf.bedarfProMonat)
+        assertNull(bedarf.monatskosten)
+        assertNull(bedarf.reichweiteTage)
+        assertFalse(bedarf.nachkaufEmpfohlen)
+    }
+
+    @Test
+    fun `Batch-Scan mehrerer Packungen zaehlt als ein Nachkauf`() {
+        val start = 50L * tag
+        val bewegungen = listOf(
+            kaufBei(start),
+            kaufBei(start + 2_000),
+            kaufBei(start + 5_000),
+        )
+        val bedarf = Bedarfsrechner.berechnen(bewegungen, jetzt)
+
+        assertEquals(3, bedarf.aktuellerBestand)
+        assertNull(bedarf.verbrauchProTag)
+    }
+
+    @Test
+    fun `Nachkaeufe an verschiedenen Tagen ergeben eine sinnvolle Rate`() {
+        val bewegungen = listOf(
+            kaufBei(0, menge = 1),
+            kaufBei(60_000, menge = 1),                 // selber Einkauf -> Nachkauf 1 = 2 Stück
+            kaufBei(30 * tag, menge = 1),
+            kaufBei(30 * tag + 60_000, menge = 1),      // Nachkauf 2 = 2 Stück, 30 Tage später
+        )
+        val bedarf = Bedarfsrechner.berechnen(bewegungen, jetzt)
+
+        // 2 Nachkäufe: verbraucht = 4 - 2 = 2 in 30 Tagen -> rund 0,067/Tag -> 2/Monat.
+        assertEquals(0.0667, bedarf.verbrauchProTag!!, 0.001)
+        assertEquals(2.0, bedarf.bedarfProMonat!!, 0.01)
+        assertEquals(4, bedarf.aktuellerBestand)
+        assertEquals(4, bedarf.anzahlKaeufe)
+        assertEquals(2, bedarf.anzahlNachkaeufe)
     }
 
     @Test

@@ -48,7 +48,10 @@ data class Bedarf(
     val monatskosten: Double?,
     /** Was bisher insgesamt für den Artikel ausgegeben wurde. */
     val gesamtAusgaben: Double,
+    /** Wie oft der Artikel erfasst wurde (einzelne Scans/Buchungen). */
     val anzahlKaeufe: Int,
+    /** Wie viele getrennte Nachkäufe daraus wurden (Käufe desselben Einkaufs zählen als einer). */
+    val anzahlNachkaeufe: Int,
     val gekaufteMenge: Int,
     val ersterKauf: Long?,
     val letzterKauf: Long?,
@@ -78,6 +81,7 @@ data class Bedarf(
             monatskosten = null,
             gesamtAusgaben = 0.0,
             anzahlKaeufe = 0,
+            anzahlNachkaeufe = 0,
             gekaufteMenge = 0,
             ersterKauf = null,
             letzterKauf = null,
@@ -99,6 +103,14 @@ object Bedarfsrechner {
     private const val TAG_MS = 86_400_000.0
     private const val TAGE_PRO_MONAT = 30.0
 
+    /**
+     * Käufe, die weniger als so weit auseinanderliegen, gehören zum selben Einkauf — etwa
+     * zwei Packungen aus einem Einkauf oder das Einräumen der Tüte, bei dem nacheinander
+     * gescannt wird. Sie zählen als ein Nachkauf, nicht als Verbrauchszyklus, sonst schnellt
+     * der geschätzte Bedarf ins Absurde.
+     */
+    private const val EINKAUF_FENSTER_MS = 12L * 60 * 60 * 1000
+
     fun berechnen(bewegungen: List<Bewegung>, jetzt: Long = System.currentTimeMillis()): Bedarf {
         if (bewegungen.isEmpty()) return Bedarf.leer
 
@@ -111,7 +123,9 @@ object Bedarfsrechner {
         val gesamtAusgaben = kaeufe.sumOf { (it.stueckpreis ?: 0.0) * it.menge }
         val letzterStueckpreis = kaeufe.lastOrNull { it.stueckpreis != null }?.stueckpreis
 
-        val verbrauchProTag = verbrauchProTag(kaeufe)
+        // Zeitnahe Käufe zu einem Nachkauf zusammenfassen — das ist das Maß für den Rhythmus.
+        val nachkaeufe = zuNachkaeufen(kaeufe)
+        val verbrauchProTag = verbrauchProTag(nachkaeufe)
         val bedarfProWoche = verbrauchProTag?.let { it * 7 }
         val bedarfProMonat = verbrauchProTag?.let { it * TAGE_PRO_MONAT }
 
@@ -135,6 +149,7 @@ object Bedarfsrechner {
             monatskosten = monatskosten,
             gesamtAusgaben = gesamtAusgaben,
             anzahlKaeufe = kaeufe.size,
+            anzahlNachkaeufe = nachkaeufe.size,
             gekaufteMenge = gekaufteMenge,
             ersterKauf = kaeufe.firstOrNull()?.zeitpunkt,
             letzterKauf = kaeufe.lastOrNull()?.zeitpunkt,
@@ -142,19 +157,41 @@ object Bedarfsrechner {
     }
 
     /**
-     * Verbrauch pro Tag aus dem Nachkauf-Rhythmus. Braucht mindestens zwei Käufe mit
-     * zeitlichem Abstand; die zuletzt gekaufte Charge zählt als noch vorhanden und geht
+     * Verbrauch pro Tag aus dem Nachkauf-Rhythmus. Käufe desselben Einkaufs werden zuvor zu
+     * einem Nachkauf zusammengefasst; es braucht mindestens zwei solche Nachkäufe mit
+     * zeitlichem Abstand. Die zuletzt gekaufte Charge zählt als noch vorhanden und geht
      * deshalb nicht in den bereits verbrauchten Teil ein.
      */
-    private fun verbrauchProTag(kaeufe: List<Bewegung>): Double? {
-        if (kaeufe.size < 2) return null
+    private fun verbrauchProTag(nachkaeufe: List<Nachkauf>): Double? {
+        if (nachkaeufe.size < 2) return null
 
-        val spanneTage = (kaeufe.last().zeitpunkt - kaeufe.first().zeitpunkt) / TAG_MS
+        val spanneTage = (nachkaeufe.last().zeitpunkt - nachkaeufe.first().zeitpunkt) / TAG_MS
         if (spanneTage <= 0) return null
 
-        val verbraucht = (kaeufe.sumOf { it.menge } - kaeufe.last().menge).toDouble()
+        val verbraucht = (nachkaeufe.sumOf { it.menge } - nachkaeufe.last().menge).toDouble()
         if (verbraucht <= 0) return null
 
         return verbraucht / spanneTage
     }
+
+    /**
+     * Fasst zeitnahe Käufe zu einem Nachkauf zusammen. Ein neuer Kauf gehört zum laufenden
+     * Nachkauf, solange er innerhalb des Einkaufsfensters auf den vorigen Scan folgt; sonst
+     * beginnt ein neuer Nachkauf.
+     */
+    private fun zuNachkaeufen(kaeufe: List<Bewegung>): List<Nachkauf> {
+        val nachkaeufe = mutableListOf<Nachkauf>()
+        for (kauf in kaeufe) {
+            val letzter = nachkaeufe.lastOrNull()
+            if (letzter != null && kauf.zeitpunkt - letzter.zeitpunkt <= EINKAUF_FENSTER_MS) {
+                nachkaeufe[nachkaeufe.lastIndex] = Nachkauf(kauf.zeitpunkt, letzter.menge + kauf.menge)
+            } else {
+                nachkaeufe += Nachkauf(kauf.zeitpunkt, kauf.menge)
+            }
+        }
+        return nachkaeufe
+    }
+
+    /** Ein zusammengefasster Nachkauf: Zeitpunkt des letzten Scans und Gesamtmenge. */
+    private data class Nachkauf(val zeitpunkt: Long, val menge: Int)
 }

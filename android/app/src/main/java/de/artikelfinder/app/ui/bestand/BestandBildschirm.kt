@@ -222,8 +222,8 @@ private fun MengenSteuerung(menge: Int, beiPlus: () -> Unit, beiMinus: () -> Uni
 
 private fun bedarfZeile(bedarf: Bedarf): String {
     if (!bedarf.hatBedarfsschaetzung) {
-        return if (bedarf.anzahlKaeufe <= 1) {
-            "Noch zu wenig Käufe für eine Bedarfsschätzung"
+        return if (bedarf.anzahlNachkaeufe <= 1) {
+            "Bedarf ab dem zweiten Nachkauf"
         } else {
             "Bedarf noch nicht bestimmbar"
         }

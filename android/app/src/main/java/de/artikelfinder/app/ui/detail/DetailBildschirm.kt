@@ -383,8 +383,10 @@ private fun BestandAbschnitt(
             bedarf.monatskosten?.let { Zeile("Kosten je Monat", "≈ ${it.alsPreis()}") }
         } else {
             Text(
-                text = "Sobald du diesen Artikel ein zweites Mal kaufst und einscannst, "
-                    + "schätzt die App aus deinem Rhythmus, wie viel du brauchst und was es kostet.",
+                text = "Sobald du diesen Artikel an einem weiteren Einkaufstag nachkaufst und "
+                    + "einscannst, schätzt die App aus deinem Rhythmus, wie viel du brauchst und "
+                    + "was es kostet. Mehrere Packungen aus einem Einkauf zählen dabei als ein "
+                    + "Nachkauf.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
