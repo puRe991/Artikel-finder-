@@ -7,6 +7,8 @@ Gang, in dem der Artikel steht.
 der Kamera ein — sie landen in deinem Bestand. Aus dem Rhythmus, in dem du nachkaufst,
 schätzt die App mit der Zeit, wie viel du pro Woche und Monat brauchst, wie lange dein
 Vorrat noch reicht und was dich das kostet. Bald leere Artikel rücken von selbst nach oben.
+Der Vorrat zeigt je Artikel den Gesamtwert; Preis und Bild lassen sich für jeden Artikel
+selbst pflegen — das Bild direkt aus der Galerie.
 
 **Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
 Der Artikelkatalog — gut 19.000 reale Produkte aus
@@ -47,7 +49,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew test                 # 50 Tests
+./gradlew test                 # 52 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -176,10 +178,22 @@ Version 2 hinzu; selbst erfasste Preise, Standorte und Bestände dürfen dabei n
 gehen. Room exportiert sein Schema nach `app/schemas/`, und die Migration übernimmt das
 erzeugte SQL wortgleich — weicht es ab, verweigert Room beim Start den Dienst.
 
+**Der Vorrat wird zum gepflegten Preis bewertet, nicht zum historischen.** Gesamtwert und
+Monatskosten rechnen mit dem aktuell erfassten Artikelpreis (laufender Werbepreis, sonst
+Normalpreis); ändert man den Preis, ändern sie sich mit. „Bisher ausgegeben" bleibt davon
+unberührt — das ist die Summe der tatsächlich gezahlten Kaufpreise. Ohne erfassten Preis
+greift die Bewertung auf den zuletzt gezahlten Kaufpreis zurück.
+
+**Selbst gewählte Bilder werden kopiert, nicht nur verlinkt.** Der Android-Fotopicker gibt
+nur kurzlebigen Lesezugriff auf das Original; damit ein Bild die Sitzung überlebt und
+offline verfügbar ist, landet es als Kopie im privaten App-Speicher (`file://`-URI im
+`bild_url`-Feld). Katalogbilder (http) bleiben Verweise. So bekommt jeder Artikel — auch ein
+Katalogartikel — ein eigenes Foto, ohne Kamera- oder Speicherberechtigung.
+
 ## Tests
 
 ```bash
-cd android && ./gradlew test       # 50 Tests
+cd android && ./gradlew test       # 52 Tests
 cd backend && dotnet test          # 79 Tests
 ```
 

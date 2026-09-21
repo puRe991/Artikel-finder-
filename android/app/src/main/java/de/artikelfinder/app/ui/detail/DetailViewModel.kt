@@ -1,5 +1,6 @@
 package de.artikelfinder.app.ui.detail
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.artikelfinder.app.data.Abruf
 import de.artikelfinder.app.data.ArtikelDetail
 import de.artikelfinder.app.data.ArtikelRepository
+import de.artikelfinder.app.data.Bildspeicher
 import de.artikelfinder.app.ui.navigation.Ziele
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +30,7 @@ data class DetailZustand(
 @HiltViewModel
 class DetailViewModel @Inject constructor(
     private val repository: ArtikelRepository,
+    private val bildspeicher: Bildspeicher,
     zustandHalter: SavedStateHandle,
 ) : ViewModel() {
 
@@ -87,6 +90,53 @@ class DetailViewModel @Inject constructor(
 
     fun bestandKorrigieren(neueMenge: Int) {
         speichern { repository.bestandKorrigieren(artikelId, neueMenge) }
+    }
+
+    /** Ein aus der Galerie gewähltes Bild in den App-Speicher übernehmen und setzen. */
+    fun bildGewaehlt(quelle: Uri) {
+        viewModelScope.launch {
+            val altesBild = _zustand.value.detail?.artikel?.bildUrl
+            _zustand.value = _zustand.value.copy(speichert = true)
+
+            val pfad = bildspeicher.speichern(quelle, artikelId)
+            if (pfad == null) {
+                _zustand.value = _zustand.value.copy(
+                    speichert = false,
+                    meldung = "Das Bild konnte nicht gespeichert werden.",
+                )
+                return@launch
+            }
+
+            when (val ergebnis = repository.bildSetzen(artikelId, pfad)) {
+                is Abruf.Erfolg -> {
+                    bildspeicher.entfernenFallsLokal(altesBild)
+                    _zustand.value = _zustand.value.copy(speichert = false, meldung = "Bild gespeichert.")
+                    laden()
+                }
+                is Abruf.Fehler -> {
+                    // Das eben kopierte Bild wieder wegräumen, es hängt an nichts.
+                    bildspeicher.entfernenFallsLokal(pfad)
+                    _zustand.value = _zustand.value.copy(speichert = false, meldung = ergebnis.meldung)
+                }
+            }
+        }
+    }
+
+    fun bildEntfernen() {
+        viewModelScope.launch {
+            val altesBild = _zustand.value.detail?.artikel?.bildUrl
+            _zustand.value = _zustand.value.copy(speichert = true)
+
+            when (val ergebnis = repository.bildSetzen(artikelId, null)) {
+                is Abruf.Erfolg -> {
+                    bildspeicher.entfernenFallsLokal(altesBild)
+                    _zustand.value = _zustand.value.copy(speichert = false, meldung = "Bild entfernt.")
+                    laden()
+                }
+                is Abruf.Fehler ->
+                    _zustand.value = _zustand.value.copy(speichert = false, meldung = ergebnis.meldung)
+            }
+        }
     }
 
     fun meldungGelesen() {

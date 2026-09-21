@@ -184,12 +184,21 @@ private fun BestandKarte(
                         MaterialTheme.colorScheme.primary
                     },
                 )
-                bestand.bedarf.monatskosten?.let {
-                    Text(
-                        text = "${it.alsPreis()}/Monat",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    bestand.bedarf.bestandswert?.let {
+                        Text(
+                            text = "Gesamt ${it.alsPreis()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    bestand.bedarf.monatskosten?.let {
+                        Text(
+                            text = "· ${it.alsPreis()}/Monat",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 

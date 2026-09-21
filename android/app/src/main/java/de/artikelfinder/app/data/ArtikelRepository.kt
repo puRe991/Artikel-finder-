@@ -234,6 +234,25 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         return Abruf.Erfolg(Unit)
     }
 
+    /** Setzt oder entfernt das Bild eines Artikels (auch für Katalogartikel). */
+    suspend fun bildSetzen(
+        artikelId: String,
+        bildUrl: String?,
+        geaendertVon: String? = null,
+    ): Abruf<ArtikelDetail> {
+        val vorhanden = artikelDao.roh(artikelId)
+            ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+
+        if (vorhanden.bildUrl == bildUrl) return holen(artikelId)
+
+        val jetzt = System.currentTimeMillis()
+        artikelDao.aktualisieren(vorhanden.copy(bildUrl = bildUrl, geaendertAm = jetzt))
+
+        val beschreibung = if (bildUrl == null) "Bild entfernt" else "Bild gesetzt"
+        protokollieren(artikelId, "Artikel", "Geaendert", beschreibung, geaendertVon, jetzt)
+        return holen(artikelId)
+    }
+
     suspend fun preisErfassen(
         artikelId: String,
         preis: Double,
@@ -286,7 +305,11 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
                 val artikel = artikelNachId[id] ?: return@mapNotNull null
                 Bestand(
                     artikel = artikel.zuBasisModell(),
-                    bedarf = Bedarfsrechner.berechnen(eintraege.map { it.zuBewegung() }, jetzt),
+                    bedarf = Bedarfsrechner.berechnen(
+                        eintraege.map { it.zuBewegung() },
+                        jetzt,
+                        bewertungspreis = bewertungspreisFuer(id),
+                    ),
                 )
             }.sortedWith(
                 // Was zuerst leer wird, gehört nach oben; danach richtet sich der Einkauf.
@@ -488,7 +511,24 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         Bedarfsrechner.berechnen(
             bestandDao.bewegungen(artikelId).map { it.zuBewegung() },
             System.currentTimeMillis(),
+            bewertungspreis = bewertungspreisFuer(artikelId),
         )
+
+    /**
+     * Preis, mit dem Bestand und Bedarf in Euro bewertet werden: der aktuell erfasste
+     * Artikelpreis (laufender Werbepreis, sonst Normalpreis). Ändert der Nutzer den Preis,
+     * ändern sich Gesamtwert und Monatskosten mit. Ohne erfassten Preis bleibt es dem
+     * Bedarfsrechner überlassen, auf den zuletzt gezahlten Kaufpreis zurückzugreifen.
+     */
+    private suspend fun bewertungspreisFuer(artikelId: String): Double? {
+        val preis = preisDao.aktuellster(artikelId, STANDARD_MARKT) ?: return null
+        val jetzt = System.currentTimeMillis()
+        val werbepreisAktiv = preis.werbepreis != null &&
+            (preis.werbepreisVon == null || preis.werbepreisVon <= jetzt) &&
+            (preis.werbepreisBis == null || preis.werbepreisBis >= jetzt)
+
+        return if (werbepreisAktiv) preis.werbepreis else preis.wert
+    }
 
     /**
      * Vorbelegter Stückpreis für einen Kauf: zuerst der zuletzt gezahlte Kaufpreis, sonst

@@ -111,8 +111,17 @@ object Bedarfsrechner {
      */
     private const val EINKAUF_FENSTER_MS = 12L * 60 * 60 * 1000
 
-    fun berechnen(bewegungen: List<Bewegung>, jetzt: Long = System.currentTimeMillis()): Bedarf {
-        if (bewegungen.isEmpty()) return Bedarf.leer
+    /**
+     * @param bewertungspreis Preis, mit dem Bestand und Bedarf in Euro bewertet werden — der
+     *   vom Nutzer gepflegte Artikelpreis. Ist er `null`, greift der zuletzt gezahlte
+     *   Kaufpreis, damit die reine Logik ohne Preisquelle auskommt.
+     */
+    fun berechnen(
+        bewegungen: List<Bewegung>,
+        jetzt: Long = System.currentTimeMillis(),
+        bewertungspreis: Double? = null,
+    ): Bedarf {
+        if (bewegungen.isEmpty() && bewertungspreis == null) return Bedarf.leer
 
         val aktuellerBestand = bewegungen.sumOf { it.menge }
         val kaeufe = bewegungen
@@ -121,7 +130,9 @@ object Bedarfsrechner {
 
         val gekaufteMenge = kaeufe.sumOf { it.menge }
         val gesamtAusgaben = kaeufe.sumOf { (it.stueckpreis ?: 0.0) * it.menge }
-        val letzterStueckpreis = kaeufe.lastOrNull { it.stueckpreis != null }?.stueckpreis
+        val letzterKaufpreis = kaeufe.lastOrNull { it.stueckpreis != null }?.stueckpreis
+        // Zur Bewertung zählt der gepflegte Artikelpreis; ohne ihn der zuletzt gezahlte.
+        val stueckpreis = bewertungspreis ?: letzterKaufpreis
 
         // Zeitnahe Käufe zu einem Nachkauf zusammenfassen — das ist das Maß für den Rhythmus.
         val nachkaeufe = zuNachkaeufen(kaeufe)
@@ -133,8 +144,8 @@ object Bedarfsrechner {
             ?.takeIf { it > 0 }
             ?.let { aktuellerBestand.coerceAtLeast(0) / it }
 
-        val monatskosten = if (bedarfProMonat != null && letzterStueckpreis != null) {
-            bedarfProMonat * letzterStueckpreis
+        val monatskosten = if (bedarfProMonat != null && stueckpreis != null) {
+            bedarfProMonat * stueckpreis
         } else {
             null
         }
@@ -145,7 +156,7 @@ object Bedarfsrechner {
             bedarfProWoche = bedarfProWoche,
             bedarfProMonat = bedarfProMonat,
             reichweiteTage = reichweiteTage,
-            letzterStueckpreis = letzterStueckpreis,
+            letzterStueckpreis = stueckpreis,
             monatskosten = monatskosten,
             gesamtAusgaben = gesamtAusgaben,
             anzahlKaeufe = kaeufe.size,

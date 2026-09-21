@@ -361,6 +361,31 @@ class ArtikelRepositoryTest {
     }
 
     @Test
+    fun `Gesamtwert folgt dem erfassten Preis`() = runTest {
+        val artikel = repository.anlegen(name = "Spülmittel").erfolg()
+        val id = artikel.artikel.id
+        repository.einkaufErfassen(id, menge = 2) // noch ohne Preis
+
+        repository.preisErfassen(id, preis = 1.50)
+
+        val bedarf = repository.bedarf(id).erfolg()
+        assertEquals(1.50, bedarf.letzterStueckpreis!!, 0.0001)
+        assertEquals(3.00, bedarf.bestandswert!!, 0.0001) // 2 Stück × 1,50
+    }
+
+    @Test
+    fun `Bild setzen und entfernen aktualisiert den Artikel`() = runTest {
+        val artikel = repository.anlegen(name = "Ohne Bild").erfolg()
+        val id = artikel.artikel.id
+
+        repository.bildSetzen(id, "file:///data/bild.jpg")
+        assertEquals("file:///data/bild.jpg", repository.holen(id).erfolg().artikel.bildUrl)
+
+        repository.bildSetzen(id, null)
+        assertNull(repository.holen(id).erfolg().artikel.bildUrl)
+    }
+
+    @Test
     fun `Bestandsbewegungen stehen im Verlauf`() = runTest {
         val artikel = repository.anlegen(name = "Reis").erfolg()
         val id = artikel.artikel.id

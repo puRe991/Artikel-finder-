@@ -1,6 +1,11 @@
 package de.artikelfinder.app.ui.detail
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,12 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +44,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -72,6 +81,12 @@ fun DetailBildschirm(
     var standortDialogOffen by remember { mutableStateOf(false) }
     var einkaufDialogOffen by remember { mutableStateOf(false) }
     var korrekturDialogOffen by remember { mutableStateOf(false) }
+
+    // Android-Fotopicker: kein Berechtigungsdialog nötig, das Bild wird danach in den
+    // App-Speicher kopiert.
+    val bildWaehler = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> uri?.let(viewModel::bildGewaehlt) }
 
     LaunchedEffect(zustand.meldung) {
         zustand.meldung?.let {
@@ -118,6 +133,12 @@ fun DetailBildschirm(
                     beiVerbraucht = { viewModel.verbrauchErfassen(1) },
                     beiEinkaufErfassen = { einkaufDialogOffen = true },
                     beiKorrektur = { korrekturDialogOffen = true },
+                    beiBildWaehlen = {
+                        bildWaehler.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    beiBildEntfernen = viewModel::bildEntfernen,
                 )
             }
         }
@@ -177,6 +198,8 @@ private fun Inhalt(
     beiVerbraucht: () -> Unit,
     beiEinkaufErfassen: () -> Unit,
     beiKorrektur: () -> Unit,
+    beiBildWaehlen: () -> Unit,
+    beiBildEntfernen: () -> Unit,
 ) {
     val artikel = detail.artikel
 
@@ -187,13 +210,11 @@ private fun Inhalt(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        artikel.bildUrl?.takeIf { it.isNotBlank() }?.let {
-            AsyncImage(
-                model = it,
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().height(180.dp),
-            )
-        }
+        Bildbereich(
+            bildUrl = artikel.bildUrl,
+            beiWaehlen = beiBildWaehlen,
+            beiEntfernen = beiBildEntfernen,
+        )
 
         Text(text = artikel.name, style = MaterialTheme.typography.headlineSmall)
         artikel.marke?.let {
@@ -324,6 +345,51 @@ private fun Inhalt(
 }
 
 @Composable
+private fun Bildbereich(bildUrl: String?, beiWaehlen: () -> Unit, beiEntfernen: () -> Unit) {
+    val hatBild = !bildUrl.isNullOrBlank()
+
+    if (hatBild) {
+        AsyncImage(
+            model = bildUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .clip(RoundedCornerShape(12.dp)),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(48.dp),
+            )
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedButton(onClick = beiWaehlen, modifier = Modifier.weight(1f)) {
+            Text(if (hatBild) "Bild ändern" else "Bild einfügen")
+        }
+        if (hatBild) {
+            OutlinedButton(onClick = beiEntfernen) { Text("Entfernen") }
+        }
+    }
+}
+
+@Composable
 private fun BestandAbschnitt(
     bedarf: Bedarf,
     beiGekauft: () -> Unit,
@@ -373,6 +439,12 @@ private fun BestandAbschnitt(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 8.dp),
             )
+        }
+
+        if (bedarf.letzterStueckpreis != null) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Zeile("Stückpreis", bedarf.letzterStueckpreis.alsPreis())
+            bedarf.bestandswert?.let { Zeile("Gesamtwert", it.alsPreis()) }
         }
 
         if (bedarf.hatBedarfsschaetzung) {
