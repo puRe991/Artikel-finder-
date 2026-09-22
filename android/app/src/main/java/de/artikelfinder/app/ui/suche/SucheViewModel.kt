@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -50,7 +49,8 @@ class SucheViewModel @Inject constructor(
         // Erst tippen lassen, dann suchen — sonst löst jeder Buchstabe einen Request aus.
         eingabe
             .debounce(300)
-            .distinctUntilChanged()
+            // Kein distinctUntilChanged: tippt man zum zuletzt gesuchten Begriff zurück,
+            // muss die Suche trotzdem laufen, damit „laedt“ wieder zurückgesetzt wird.
             .onEach { suchen() }
             .launchIn(viewModelScope)
 
@@ -68,7 +68,10 @@ class SucheViewModel @Inject constructor(
     }
 
     fun suchbegriffGeaendert(wert: String) {
-        _zustand.value = _zustand.value.copy(suchbegriff = wert)
+        val neu = _zustand.value.copy(suchbegriff = wert)
+        // Gilt schon während der Entprellzeit als ladend — sonst blitzt „Keine Treffer“ auf,
+        // bevor die Suche überhaupt läuft.
+        _zustand.value = neu.copy(laedt = !neu.zeigtVerlauf)
         eingabe.value = wert
     }
 

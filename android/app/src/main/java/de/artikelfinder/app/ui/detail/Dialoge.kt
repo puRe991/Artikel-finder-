@@ -1,9 +1,16 @@
 package de.artikelfinder.app.ui.detail
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Euro
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -13,9 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.unit.dp
+import de.artikelfinder.app.ui.komponenten.Eingabe
+import de.artikelfinder.app.ui.theme.Abstand
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -56,44 +62,50 @@ fun PreisDialog(
 
     AlertDialog(
         onDismissRequest = beiAbbrechen,
+        icon = { Icon(Icons.Outlined.Euro, contentDescription = null) },
         title = { Text("Preis erfassen") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = preisText,
-                    onValueChange = { preisText = it },
-                    label = { Text("Normalpreis in €") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
+            Column(verticalArrangement = Arrangement.spacedBy(Abstand.eng)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Abstand.eng)) {
+                    Eingabe(
+                        wert = preisText,
+                        beiAenderung = { preisText = it },
+                        bezeichnung = "Normalpreis",
+                        suffix = "€",
+                        tastatur = KeyboardType.Decimal,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Eingabe(
+                        wert = werbepreisText,
+                        beiAenderung = { werbepreisText = it },
+                        bezeichnung = "Werbepreis",
+                        suffix = "€",
+                        tastatur = KeyboardType.Decimal,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Eingabe(
+                    wert = gueltigBisText,
+                    beiAenderung = { gueltigBisText = it },
+                    bezeichnung = "Aktion gültig bis",
+                    platzhalter = "TT.MM.JJJJ",
                 )
-                OutlinedTextField(
-                    value = werbepreisText,
-                    onValueChange = { werbepreisText = it },
-                    label = { Text("Werbepreis in € (optional)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
+                Eingabe(
+                    wert = erfasstVon,
+                    beiAenderung = { erfasstVon = it },
+                    bezeichnung = "Erfasst von (optional)",
                 )
-                OutlinedTextField(
-                    value = gueltigBisText,
-                    onValueChange = { gueltigBisText = it },
-                    label = { Text("Aktion gültig bis (TT.MM.JJJJ)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = erfasstVon,
-                    onValueChange = { erfasstVon = it },
-                    label = { Text("Erfasst von (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                fehler?.let { Text(text = it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+                fehler?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 enabled = preis != null && fehler == null,
                 onClick = {
                     beiSpeichern(preis!!, werbepreis, gueltigBis, erfasstVon.ifBlank { null })
@@ -115,35 +127,32 @@ fun StandortDialog(
 
     AlertDialog(
         onDismissRequest = beiAbbrechen,
+        icon = { Icon(Icons.Outlined.Place, contentDescription = null) },
         title = { Text("Standort erfassen") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = gang,
-                    onValueChange = { gang = it },
-                    label = { Text("Gang") },
-                    placeholder = { Text("z. B. 7") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+            Column(verticalArrangement = Arrangement.spacedBy(Abstand.eng)) {
+                Eingabe(
+                    wert = gang,
+                    beiAenderung = { gang = it },
+                    bezeichnung = "Gang",
+                    platzhalter = "z. B. 7",
                 )
-                OutlinedTextField(
-                    value = regal,
-                    onValueChange = { regal = it },
-                    label = { Text("Regal (optional)") },
-                    placeholder = { Text("z. B. links, mittleres Fach") },
-                    modifier = Modifier.fillMaxWidth(),
+                Eingabe(
+                    wert = regal,
+                    beiAenderung = { regal = it },
+                    bezeichnung = "Regal (optional)",
+                    platzhalter = "z. B. links, mittleres Fach",
+                    einzeilig = false,
                 )
-                OutlinedTextField(
-                    value = erfasstVon,
-                    onValueChange = { erfasstVon = it },
-                    label = { Text("Erfasst von (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                Eingabe(
+                    wert = erfasstVon,
+                    beiAenderung = { erfasstVon = it },
+                    bezeichnung = "Erfasst von (optional)",
                 )
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 enabled = gang.isNotBlank(),
                 onClick = {
                     beiSpeichern(gang.trim(), regal.ifBlank { null }, erfasstVon.ifBlank { null })
