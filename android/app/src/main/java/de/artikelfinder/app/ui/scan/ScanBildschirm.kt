@@ -13,6 +13,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -21,11 +23,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +56,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -62,6 +68,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import de.artikelfinder.app.ui.komponenten.FehlerAnzeige
 import de.artikelfinder.app.ui.komponenten.LeerAnzeige
+import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,8 +99,8 @@ fun ScanBildschirm(
         }
     }
 
-    // Der Scan-Bildschirm ist nur Zwischenstation: nach dem Treffer sofort weiter, und den
-    // Zustand zurücksetzen, damit der nächste Aufruf wieder scanbereit ist.
+    // In der Suche ist der Scan nur Zwischenstation: nach dem Treffer sofort weiter. Im
+    // Vorrat-Modus bleibt der Scanner offen, nur unbekannte Codes führen zum Anlegen.
     LaunchedEffect(zustand.ergebnis) {
         when (val ergebnis = zustand.ergebnis) {
             is ScanErgebnis.Gefunden -> {
@@ -105,6 +112,14 @@ fun ScanBildschirm(
                 beiUnbekannterEan(ergebnis.ean)
             }
             null -> Unit
+        }
+    }
+
+    // Die Einbuch-Bestätigung kurz zeigen, dann ausblenden — der Zähler bleibt.
+    LaunchedEffect(zustand.letzteMeldung) {
+        if (zustand.letzteMeldung != null) {
+            delay(2500)
+            viewModel.meldungGelesen()
         }
     }
 
@@ -126,19 +141,25 @@ fun ScanBildschirm(
             else -> {
                 Kameravorschau(beiBarcode = viewModel::barcodeErkannt)
                 Zielrahmen()
-                Hinweisleiste(
-                    zustand,
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(bottom = 48.dp),
-                )
+                        .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Hinweisleiste(zustand)
+                    if (zustand.zumBestand) {
+                        Einkaufsleiste(erfasst = zustand.erfassteMenge, beiFertig = beiZurueck)
+                    }
+                }
             }
         }
 
         val aufKamera = hatBerechtigung && zustand.fehler == null
         TopAppBar(
-            title = { Text("Barcode scannen") },
+            title = { Text(if (zustand.zumBestand) "Einkauf scannen" else "Barcode scannen") },
             navigationIcon = {
                 IconButton(onClick = beiZurueck) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
@@ -257,9 +278,11 @@ private fun Kameravorschau(beiBarcode: (String) -> Unit) {
 
 @Composable
 private fun Hinweisleiste(zustand: ScanZustand, modifier: Modifier = Modifier) {
+    val meldung = zustand.letzteMeldung
+
     Surface(
-        color = Color.Black.copy(alpha = 0.7f),
-        contentColor = Color.White,
+        color = if (meldung != null) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.7f),
+        contentColor = if (meldung != null) MaterialTheme.colorScheme.onPrimary else Color.White,
         shape = CircleShape,
         modifier = modifier,
     ) {
@@ -268,20 +291,64 @@ private fun Hinweisleiste(zustand: ScanZustand, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (zustand.prueft) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = Color.White,
-                )
-                Text(text = "Suche ${zustand.gescannteEan} …", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                Text(
-                    text = "Barcode in den Rahmen halten",
+            when {
+                zustand.prueft -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = LocalContentColor.current,
+                    )
+                    Text(text = "Suche ${zustand.gescannteEan} …", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                meldung != null -> {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text(
+                        text = "${meldung.name} · jetzt ${meldung.neuerBestand} zu Hause",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                else -> Text(
+                    text = if (zustand.zumBestand) {
+                        "Gekaufte Artikel nacheinander in den Rahmen halten"
+                    } else {
+                        "Barcode in den Rahmen halten"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                 )
             }
+        }
+    }
+}
+
+/** Nur beim Einkauf-Scannen: wie viel schon gebucht ist, und der Weg zurück. */
+@Composable
+private fun Einkaufsleiste(erfasst: Int, beiFertig: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Eingebucht",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = if (erfasst == 1) "1 Stück" else "$erfasst Stück",
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+            Button(onClick = beiFertig) { Text("Fertig") }
         }
     }
 }

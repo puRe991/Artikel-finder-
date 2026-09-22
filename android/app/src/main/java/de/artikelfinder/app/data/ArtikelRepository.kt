@@ -5,6 +5,7 @@ import de.artikelfinder.app.data.Katalogaufbau.Companion.STANDARD_MARKT
 import de.artikelfinder.app.data.local.ArtikelDatenbank
 import de.artikelfinder.app.data.local.ArtikelEintrag
 import de.artikelfinder.app.data.local.ArtikelMitStand
+import de.artikelfinder.app.data.local.BestandsbewegungEintrag
 import de.artikelfinder.app.data.local.PreisEintrag
 import de.artikelfinder.app.data.local.StandortEintrag
 import de.artikelfinder.app.data.local.VerlaufEintrag
@@ -36,6 +37,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
     private val standortDao get() = datenbank.standortDao()
     private val verlaufDao get() = datenbank.verlaufDao()
     private val stammdatenDao get() = datenbank.stammdatenDao()
+    private val bestandDao get() = datenbank.bestandDao()
 
     /** Laufende Angebote, das am schnellsten ablaufende zuerst. */
     fun aktiveAngebote(): Flow<List<Artikel>> =
@@ -120,6 +122,7 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
                 preise = preisDao.fuerArtikel(id).map { it.zuModell() },
                 standorte = standortDao.fuerArtikel(id).map { it.zuModell() },
                 erstelltVon = artikel.artikel.erstelltVon,
+                bedarf = bedarfFuer(id),
             )
         )
     }
@@ -231,6 +234,25 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         return Abruf.Erfolg(Unit)
     }
 
+    /** Setzt oder entfernt das Bild eines Artikels (auch für Katalogartikel). */
+    suspend fun bildSetzen(
+        artikelId: String,
+        bildUrl: String?,
+        geaendertVon: String? = null,
+    ): Abruf<ArtikelDetail> {
+        val vorhanden = artikelDao.roh(artikelId)
+            ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+
+        if (vorhanden.bildUrl == bildUrl) return holen(artikelId)
+
+        val jetzt = System.currentTimeMillis()
+        artikelDao.aktualisieren(vorhanden.copy(bildUrl = bildUrl, geaendertAm = jetzt))
+
+        val beschreibung = if (bildUrl == null) "Bild entfernt" else "Bild gesetzt"
+        protokollieren(artikelId, "Artikel", "Geaendert", beschreibung, geaendertVon, jetzt)
+        return holen(artikelId)
+    }
+
     suspend fun preisErfassen(
         artikelId: String,
         preis: Double,
@@ -266,6 +288,112 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
             artikelId, gang, regalBeschreibung, erfasstVon, System.currentTimeMillis()
         )
         return Abruf.Erfolg(eintrag.zuModell())
+    }
+
+    // --- Eigener Vorrat (Bestand) und Bedarf ---
+
+    /** Laufender Überblick über den eigenen Vorrat, das Dringlichste zuerst. */
+    fun bestandsUebersicht(): Flow<List<Bestand>> =
+        bestandDao.alleBewegungen().map { bewegungen ->
+            val jetzt = System.currentTimeMillis()
+            val proArtikel = bewegungen.groupBy { it.artikelId }
+            if (proArtikel.isEmpty()) return@map emptyList()
+
+            val artikelNachId = artikelDao.rohMehrere(proArtikel.keys.toList()).associateBy { it.id }
+
+            proArtikel.mapNotNull { (id, eintraege) ->
+                val artikel = artikelNachId[id] ?: return@mapNotNull null
+                Bestand(
+                    artikel = artikel.zuBasisModell(),
+                    bedarf = Bedarfsrechner.berechnen(
+                        eintraege.map { it.zuBewegung() },
+                        jetzt,
+                        bewertungspreis = bewertungspreisFuer(id),
+                    ),
+                )
+            }.sortedWith(
+                // Was zuerst leer wird, gehört nach oben; danach richtet sich der Einkauf.
+                compareBy(
+                    { it.bedarf.reichweiteTage ?: Double.MAX_VALUE },
+                    { it.artikel.name.lowercase(Locale.GERMANY) },
+                )
+            )
+        }
+
+    suspend fun bedarf(artikelId: String): Abruf<Bedarf> {
+        artikelDao.roh(artikelId) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+        return Abruf.Erfolg(bedarfFuer(artikelId))
+    }
+
+    /** Einen gekauften Artikel in den Vorrat aufnehmen (Bestand erhöhen). */
+    suspend fun einkaufErfassen(
+        artikelId: String,
+        menge: Int = 1,
+        stueckpreis: Double? = null,
+        erfasstVon: String? = null,
+    ): Abruf<Bedarf> {
+        artikelDao.roh(artikelId) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+        if (menge <= 0) return Abruf.Fehler("Die Menge muss größer als null sein.")
+
+        val preis = stueckpreis ?: standardStueckpreis(artikelId)
+        bewegungErfassenIntern(artikelId, Bewegungsart.KAUF, menge, preis, erfasstVon, System.currentTimeMillis())
+        return Abruf.Erfolg(bedarfFuer(artikelId))
+    }
+
+    /**
+     * Einen gekauften Artikel per Barcode in den Vorrat aufnehmen. `null` heißt: die EAN ist
+     * unbekannt — die App bietet dann das Anlegen an.
+     */
+    suspend fun einkaufPerEan(
+        ean: String,
+        menge: Int = 1,
+        erfasstVon: String? = null,
+    ): Abruf<BestandBestaetigung?> {
+        val normalisiert = Ean.normalisieren(ean) ?: return Abruf.Erfolg(null)
+        val artikelId = artikelDao.idPerEan(normalisiert) ?: return Abruf.Erfolg(null)
+
+        return when (val ergebnis = einkaufErfassen(artikelId, menge, erfasstVon = erfasstVon)) {
+            is Abruf.Erfolg -> {
+                val name = artikelDao.roh(artikelId)?.name ?: "Artikel"
+                Abruf.Erfolg(BestandBestaetigung(artikelId, name, ergebnis.wert.aktuellerBestand))
+            }
+            is Abruf.Fehler -> ergebnis
+        }
+    }
+
+    /** Verbrauch buchen (Bestand senken), höchstens bis auf null. */
+    suspend fun verbrauchErfassen(
+        artikelId: String,
+        menge: Int = 1,
+        erfasstVon: String? = null,
+    ): Abruf<Bedarf> {
+        artikelDao.roh(artikelId) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+
+        val vorhanden = bestandDao.bestand(artikelId)
+        val abzug = menge.coerceAtMost(vorhanden)
+        if (abzug <= 0) return Abruf.Erfolg(bedarfFuer(artikelId))
+
+        bewegungErfassenIntern(artikelId, Bewegungsart.VERBRAUCH, -abzug, null, erfasstVon, System.currentTimeMillis())
+        return Abruf.Erfolg(bedarfFuer(artikelId))
+    }
+
+    /** Den Bestand von Hand auf einen genauen Wert setzen. */
+    suspend fun bestandKorrigieren(
+        artikelId: String,
+        neueMenge: Int,
+        erfasstVon: String? = null,
+    ): Abruf<Bedarf> {
+        artikelDao.roh(artikelId) ?: return Abruf.Fehler("Der Artikel wurde nicht gefunden.")
+        if (neueMenge < 0) return Abruf.Fehler("Der Bestand kann nicht negativ sein.")
+
+        val vorhanden = bestandDao.bestand(artikelId)
+        val differenz = neueMenge - vorhanden
+        if (differenz != 0) {
+            bewegungErfassenIntern(
+                artikelId, Bewegungsart.KORREKTUR, differenz, null, erfasstVon, System.currentTimeMillis()
+            )
+        }
+        return Abruf.Erfolg(bedarfFuer(artikelId))
     }
 
     suspend fun verlauf(artikelId: String): Abruf<List<Verlaufseintrag>> =
@@ -379,6 +507,81 @@ class ArtikelRepository @Inject constructor(private val datenbank: ArtikelDatenb
         return eintrag
     }
 
+    private suspend fun bedarfFuer(artikelId: String): Bedarf =
+        Bedarfsrechner.berechnen(
+            bestandDao.bewegungen(artikelId).map { it.zuBewegung() },
+            System.currentTimeMillis(),
+            bewertungspreis = bewertungspreisFuer(artikelId),
+        )
+
+    /**
+     * Preis, mit dem Bestand und Bedarf in Euro bewertet werden: der aktuell erfasste
+     * Artikelpreis (laufender Werbepreis, sonst Normalpreis). Ändert der Nutzer den Preis,
+     * ändern sich Gesamtwert und Monatskosten mit. Ohne erfassten Preis bleibt es dem
+     * Bedarfsrechner überlassen, auf den zuletzt gezahlten Kaufpreis zurückzugreifen.
+     */
+    private suspend fun bewertungspreisFuer(artikelId: String): Double? {
+        val preis = preisDao.aktuellster(artikelId, STANDARD_MARKT) ?: return null
+        val jetzt = System.currentTimeMillis()
+        val werbepreisAktiv = preis.werbepreis != null &&
+            (preis.werbepreisVon == null || preis.werbepreisVon <= jetzt) &&
+            (preis.werbepreisBis == null || preis.werbepreisBis >= jetzt)
+
+        return if (werbepreisAktiv) preis.werbepreis else preis.wert
+    }
+
+    /**
+     * Vorbelegter Stückpreis für einen Kauf: zuerst der zuletzt gezahlte Kaufpreis, sonst
+     * der aktuell im Markt erfasste Ladenpreis (der laufende Werbepreis, falls aktiv). So
+     * lässt sich beim Einscannen ohne Tippen ein brauchbarer Kostenwert mitführen.
+     */
+    private suspend fun standardStueckpreis(artikelId: String): Double? {
+        bestandDao.letzterKaufpreis(artikelId)?.let { return it }
+
+        val preis = preisDao.aktuellster(artikelId, STANDARD_MARKT) ?: return null
+        val jetzt = System.currentTimeMillis()
+        val werbepreisAktiv = preis.werbepreis != null &&
+            (preis.werbepreisVon == null || preis.werbepreisVon <= jetzt) &&
+            (preis.werbepreisBis == null || preis.werbepreisBis >= jetzt)
+
+        return if (werbepreisAktiv) preis.werbepreis else preis.wert
+    }
+
+    private suspend fun bewegungErfassenIntern(
+        artikelId: String,
+        art: Bewegungsart,
+        menge: Int,
+        stueckpreis: Double?,
+        erfasstVon: String?,
+        jetzt: Long,
+    ) {
+        bestandDao.einfuegen(
+            BestandsbewegungEintrag(
+                id = UUID.randomUUID().toString(),
+                artikelId = artikelId,
+                art = art.name,
+                menge = menge,
+                stueckpreis = stueckpreis,
+                erfasstAm = jetzt,
+                erfasstVon = erfasstVon.leerAlsNull(),
+            )
+        )
+
+        val neuerBestand = bestandDao.bestand(artikelId)
+        val beschreibung = when (art) {
+            Bewegungsart.KAUF -> buildString {
+                append(String.format(Locale.GERMANY, "Gekauft +%d (Bestand %d)", menge, neuerBestand))
+                stueckpreis?.let { append(String.format(Locale.GERMANY, ", %.2f EUR/Stück", it)) }
+            }
+            Bewegungsart.VERBRAUCH ->
+                String.format(Locale.GERMANY, "Verbraucht %d (Bestand %d)", -menge, neuerBestand)
+            Bewegungsart.KORREKTUR ->
+                String.format(Locale.GERMANY, "Bestand korrigiert auf %d", neuerBestand)
+        }
+
+        protokollieren(artikelId, "Bestand", art.name, beschreibung, erfasstVon, jetzt)
+    }
+
     private suspend fun protokollieren(
         artikelId: String,
         entitaet: String,
@@ -477,4 +680,22 @@ private fun StandortEintrag.zuModell() = Standort(
     kartenY = kartenY,
     erfasstAm = erfasstAm,
     erfasstVon = erfasstVon,
+)
+
+/** Ohne Preis und Standort — für die Bestandsübersicht, die davon lebt, was zu Hause liegt. */
+private fun ArtikelEintrag.zuBasisModell() = Artikel(
+    id = id,
+    name = name,
+    marke = marke,
+    ean = ean,
+    artikelnummer = artikelnummer,
+    kategorieId = kategorieId,
+    bildUrl = bildUrl,
+)
+
+private fun BestandsbewegungEintrag.zuBewegung() = Bewegung(
+    art = Bewegungsart.ausText(art),
+    menge = menge,
+    stueckpreis = stueckpreis,
+    zeitpunkt = erfasstAm,
 )

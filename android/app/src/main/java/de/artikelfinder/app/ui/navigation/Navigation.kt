@@ -8,9 +8,20 @@ import android.net.Uri
  */
 object Ziele {
     const val SUCHE = "suche"
-    const val SCAN = "scan"
     const val GAENGE = "gaenge"
     const val ANGEBOTE = "angebote"
+    const val BESTAND = "bestand"
+
+    /**
+     * Der Barcode-Scanner, mit Zweck: `suche` führt nach dem Treffer zum Artikel, `bestand`
+     * bucht den gekauften Artikel in den Vorrat und bleibt scanbereit.
+     */
+    const val SCAN = "scan?zweck={zweck}"
+    fun scan(zweck: String = ZWECK_SUCHE) = "scan?zweck=$zweck"
+
+    const val ZWECK_SUCHE = "suche"
+    const val ZWECK_BESTAND = "bestand"
+    const val ARG_ZWECK = "zweck"
 
     const val DETAIL = "artikel/{artikelId}"
     fun detail(artikelId: String) = "artikel/$artikelId"

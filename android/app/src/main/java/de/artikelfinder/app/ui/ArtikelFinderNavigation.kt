@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ViewModule
@@ -32,6 +34,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import de.artikelfinder.app.ui.angebote.AngeboteBildschirm
 import de.artikelfinder.app.ui.bearbeiten.BearbeitenBildschirm
+import de.artikelfinder.app.ui.bestand.BestandBildschirm
 import de.artikelfinder.app.ui.detail.DetailBildschirm
 import de.artikelfinder.app.ui.gaenge.GaengeBildschirm
 import de.artikelfinder.app.ui.gaenge.GangArtikelBildschirm
@@ -40,7 +43,7 @@ import de.artikelfinder.app.ui.scan.ScanBildschirm
 import de.artikelfinder.app.ui.suche.SucheBildschirm
 import de.artikelfinder.app.ui.verlauf.VerlaufBildschirm
 
-/** Die drei Hauptbereiche, zwischen denen die untere Leiste wechselt. */
+/** Die Hauptbereiche, zwischen denen die untere Leiste wechselt. */
 private enum class Hauptbereich(
     val ziel: String,
     val beschriftung: String,
@@ -50,6 +53,7 @@ private enum class Hauptbereich(
     SUCHE(Ziele.SUCHE, "Suchen", Icons.Outlined.Search, Icons.Filled.Search),
     ANGEBOTE(Ziele.ANGEBOTE, "Angebote", Icons.Outlined.LocalOffer, Icons.Filled.LocalOffer),
     GAENGE(Ziele.GAENGE, "Gänge", Icons.Outlined.ViewModule, Icons.Filled.ViewModule),
+    VORRAT(Ziele.BESTAND, "Vorrat", Icons.Outlined.Inventory2, Icons.Filled.Inventory2),
 }
 
 @Composable
@@ -100,7 +104,7 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
             composable(Ziele.SUCHE) {
                 SucheBildschirm(
                     beiArtikel = { navController.navigate(Ziele.detail(it)) },
-                    beiScan = { navController.navigate(Ziele.SCAN) },
+                    beiScan = { navController.navigate(Ziele.scan()) },
                     beiNeuemArtikel = { navController.navigate(Ziele.bearbeiten()) },
                 )
             }
@@ -117,7 +121,22 @@ fun ArtikelFinderNavigation(navController: NavHostController = rememberNavContro
                 )
             }
 
-            composable(Ziele.SCAN) {
+            composable(Ziele.BESTAND) {
+                BestandBildschirm(
+                    beiArtikel = { navController.navigate(Ziele.detail(it)) },
+                    beiScannen = { navController.navigate(Ziele.scan(Ziele.ZWECK_BESTAND)) },
+                )
+            }
+
+            composable(
+                route = Ziele.SCAN,
+                arguments = listOf(
+                    navArgument(Ziele.ARG_ZWECK) {
+                        type = NavType.StringType
+                        defaultValue = Ziele.ZWECK_SUCHE
+                    },
+                ),
+            ) {
                 ScanBildschirm(
                     // Der Scan-Bildschirm selbst gehört nicht in den Zurück-Stapel: nach dem
                     // Treffer soll „Zurück“ zur Suche führen, nicht wieder in die Kamera.

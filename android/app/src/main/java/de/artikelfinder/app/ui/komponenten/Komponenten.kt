@@ -13,17 +13,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -263,6 +268,50 @@ fun Aktionsmarke(modifier: Modifier = Modifier) {
         vordergrund = MaterialTheme.aktion.aufFarbe,
         modifier = modifier,
     )
+}
+
+/** Hinweis im Vorrat: reicht nur noch wenige Tage. */
+@Composable
+fun BaldLeerMarke(modifier: Modifier = Modifier) {
+    Marke(
+        text = "Bald leer",
+        hintergrund = MaterialTheme.aktion.farbe,
+        vordergrund = MaterialTheme.aktion.aufFarbe,
+        symbol = Icons.Outlined.Schedule,
+        modifier = modifier,
+    )
+}
+
+/** Menge mit Minus und Plus daneben — für den Vorrat zu Hause. */
+@Composable
+fun Mengenschalter(
+    menge: Int,
+    beiPlus: () -> Unit,
+    beiMinus: () -> Unit,
+    modifier: Modifier = Modifier,
+    zeigeMenge: Boolean = true,
+    knopfGroesse: Dp = 40.dp,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Abstand.minimal),
+    ) {
+        FilledTonalIconButton(onClick = beiMinus, enabled = menge > 0, modifier = Modifier.size(knopfGroesse)) {
+            Icon(Icons.Default.Remove, contentDescription = "Eins verbraucht")
+        }
+        if (zeigeMenge) {
+            Text(
+                text = menge.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(min = 24.dp),
+            )
+        }
+        FilledTonalIconButton(onClick = beiPlus, modifier = Modifier.size(knopfGroesse)) {
+            Icon(Icons.Default.Add, contentDescription = "Eins gekauft")
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------

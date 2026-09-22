@@ -3,6 +3,13 @@
 Artikelsuche für den Kaufland Gießen: Name, EAN, Normalpreis, laufender Werbepreis und der
 Gang, in dem der Artikel steht.
 
+**Der eigene Vorrat und ein mitdenkender Bedarf.** Gekaufte Artikel scannst du zu Hause mit
+der Kamera ein — sie landen in deinem Bestand. Aus dem Rhythmus, in dem du nachkaufst,
+schätzt die App mit der Zeit, wie viel du pro Woche und Monat brauchst, wie lange dein
+Vorrat noch reicht und was dich das kostet. Bald leere Artikel rücken von selbst nach oben.
+Der Vorrat zeigt je Artikel den Gesamtwert; Preis und Bild lassen sich für jeden Artikel
+selbst pflegen — das Bild direkt aus der Galerie.
+
 **Die App läuft eigenständig auf dem Handy.** Kein Server, kein Rechner, kein WLAN nötig.
 Der Artikelkatalog — gut 19.000 reale Produkte aus
 [Open Food Facts](https://world.openfoodfacts.org/data) und seinen Schwesterdatenbanken,
@@ -18,10 +25,11 @@ Preis- und Standorterfassung funktionieren vollständig offline.
 ```
 android/                              Die App — Kotlin, Jetpack Compose, Room
   app/src/main/assets/                Der ausgelieferte Artikelkatalog
+  app/schemas/                        Von Room exportiertes DB-Schema (Vorlage für Migrationen)
   app/src/main/java/de/artikelfinder/app/
-    data/                             Room-Datenbank, Repository, Katalogaufbau
-    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote
-  app/src/test/                       31 Tests gegen echtes SQLite (Robolectric)
+    data/                             Room-Datenbank, Repository, Katalogaufbau, Bedarfsrechner
+    ui/suche | detail | bearbeiten | scan | gaenge | verlauf | angebote | bestand
+  app/src/test/                       Tests: echtes SQLite (Robolectric) + reine Bedarfslogik
 
 backend/                              Werkzeug, nicht zur Laufzeit nötig
   src/ArtikelFinder.Import/           Erzeugt den Katalog aus Open Food Facts
@@ -41,7 +49,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 
 ./gradlew :app:assembleDebug   # zum Entwickeln (~26 MB)
 ./gradlew :app:assembleDist    # zum Weitergeben, verkleinert (~9 MB)
-./gradlew test                 # 31 Tests
+./gradlew test                 # 52 Tests
 ```
 
 Beide Varianten erzeugen je ein APK pro Prozessorarchitektur unter
@@ -146,16 +154,54 @@ hintereinander. Bei verknitterten Etiketten sind Einzelbild-Fehlerkennungen häu
 falscher Barcode führt direkt zum falschen Artikel. Die Auswertung läuft über ML Kit
 vollständig auf dem Gerät.
 
+**Der Scanner kann zweierlei.** In der Suche führt ein Treffer zum Artikel. Beim Einräumen
+des Einkaufs bleibt derselbe Scanner offen und bucht Artikel für Artikel in den Vorrat —
+ein Code zählt erst wieder, wenn er aus dem Bild verschwindet, damit ein Etikett, das noch
+vor der Kamera liegt, nicht doppelt landet.
+
+**Der Bestand ist die Summe seiner Bewegungen, nicht ein überschriebener Zähler.** Kauf,
+Verbrauch und Korrektur werden angehängt — dieselbe Regel wie bei Preisen und Standorten.
+So bleibt nachvollziehbar, wann wie viel dazukam, und aus den Kaufzeitpunkten lässt sich der
+Bedarf ableiten, ohne eine zweite Tabelle zu führen.
+
+**Der Bedarf kommt aus dem Nachkauf-Rhythmus, nicht aus Verbrauchsbuchungen.** Wer nachkauft,
+hat das Vorige aufgebraucht — also gilt alles außer der letzten Charge als verbraucht, und
+zwar in der Zeit vom ersten bis zum letzten Kauf. Das ergibt den Verbrauch pro Tag, daraus
+Wochen- und Monatsbedarf, Reichweite und Monatskosten. Der Nutzer muss dafür nur einscannen,
+was er kauft; einzelne „aufgebraucht"-Buchungen sind möglich, aber nicht nötig. Solange
+weniger als zwei Käufe mit Abstand vorliegen, nennt die App bewusst keine Zahl statt einer
+erfundenen. Die Rechnung liegt in `Bedarfsrechner` losgelöst von der Datenbank und wird rein
+per JUnit getestet.
+
+**Das Datenbankschema wird migriert, nicht verworfen.** Der Vorrat kommt als neue Tabelle in
+Version 2 hinzu; selbst erfasste Preise, Standorte und Bestände dürfen dabei nicht verloren
+gehen. Room exportiert sein Schema nach `app/schemas/`, und die Migration übernimmt das
+erzeugte SQL wortgleich — weicht es ab, verweigert Room beim Start den Dienst.
+
+**Der Vorrat wird zum gepflegten Preis bewertet, nicht zum historischen.** Gesamtwert und
+Monatskosten rechnen mit dem aktuell erfassten Artikelpreis (laufender Werbepreis, sonst
+Normalpreis); ändert man den Preis, ändern sie sich mit. „Bisher ausgegeben" bleibt davon
+unberührt — das ist die Summe der tatsächlich gezahlten Kaufpreise. Ohne erfassten Preis
+greift die Bewertung auf den zuletzt gezahlten Kaufpreis zurück.
+
+**Selbst gewählte Bilder werden kopiert, nicht nur verlinkt.** Der Android-Fotopicker gibt
+nur kurzlebigen Lesezugriff auf das Original; damit ein Bild die Sitzung überlebt und
+offline verfügbar ist, landet es als Kopie im privaten App-Speicher (`file://`-URI im
+`bild_url`-Feld). Katalogbilder (http) bleiben Verweise. So bekommt jeder Artikel — auch ein
+Katalogartikel — ein eigenes Foto, ohne Kamera- oder Speicherberechtigung.
+
 ## Tests
 
 ```bash
-cd android && ./gradlew test       # 31 Tests
+cd android && ./gradlew test       # 52 Tests
 cd backend && dotnet test          # 79 Tests
 ```
 
-Die App-Tests laufen unter Robolectric gegen echtes SQLite und lesen die tatsächlich
-ausgelieferte Katalogdatei über den Asset-Manager ein — nicht über den Quellbaum. Genau
-dieser Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
+Die Datenbank- und Repository-Tests laufen unter Robolectric gegen echtes SQLite und lesen
+die tatsächlich ausgelieferte Katalogdatei über den Asset-Manager ein — nicht über den
+Quellbaum. Genau dieser Unterschied hat die App schon einmal beim ersten Start scheitern
+lassen. Die Bedarfsrechnung dagegen hängt an keiner Android-Klasse und wird als reiner
+JUnit-Test geprüft.
 
 ## Offen
 
@@ -173,8 +219,8 @@ dieser Unterschied hat die App schon einmal beim ersten Start scheitern lassen.
 **Phase 3**
 - Mehrbenutzerbetrieb über das Backend. `erfasst_von` ist heute Freitext und würde zur
   Nutzer-Id.
-- Room-Migration statt Neuaufbau, sobald sich das Schema ändert — die Datenbank enthält
-  dann selbst erfasste Daten.
+- Room-Migrationen sind eingerichtet (Version 2 bringt den Vorrat, Daten bleiben erhalten);
+  jeder weitere Schemaschritt bekommt hier die nächste Migration.
 
 ## Rechtliches
 

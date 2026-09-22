@@ -22,6 +22,23 @@ data class ArtikelDetail(
     val preise: List<Preis> = emptyList(),
     val standorte: List<Standort> = emptyList(),
     val erstelltVon: String = "Nutzer",
+    /** Eigener Vorrat und daraus abgeleiteter Bedarf. */
+    val bedarf: Bedarf = Bedarf.leer,
+)
+
+/** Ein Artikel im eigenen Vorrat samt aktuellem Bestand und Bedarfsschätzung. */
+data class Bestand(
+    val artikel: Artikel,
+    val bedarf: Bedarf,
+) {
+    val menge: Int get() = bedarf.aktuellerBestand
+}
+
+/** Rückmeldung nach dem Einscannen eines gekauften Artikels in den Vorrat. */
+data class BestandBestaetigung(
+    val artikelId: String,
+    val name: String,
+    val neuerBestand: Int,
 )
 
 data class Preis(
